@@ -3,261 +3,223 @@ import vertexai
 from vertexai.generative_models import GenerativeModel
 from vertexai.preview.vision_models import ImageGenerationModel
 from google.oauth2 import service_account
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaFileUpload
 import requests
 from bs4 import BeautifulSoup
 import io
+import datetime
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(
-    page_title="Agency Post Factory",
-    page_icon="🏥",
-    layout="wide"
-)
+st.set_page_config(page_title="Agency Post Factory", page_icon="🏥", layout="wide")
 
-# --- CSS FOR CLEAN LOOK ---
+# --- CSS ---
 st.markdown("""
     <style>
-    .stButton>button {width: 100%; border-radius: 5px; height: 3em; font-weight: bold;}
+    .stButton>button {width: 100%; border-radius: 5px; height: 3em; font-weight: bold;} 
     div[data-testid="stStatusWidget"] {border: 1px solid #ddd; border-radius: 10px; padding: 10px;}
     </style>
 """, unsafe_allow_html=True)
 
-# --- SIDEBAR: CONFIGURATION ---
+# --- SIDEBAR: AUTH & CONFIG ---
 with st.sidebar:
     st.title("⚙️ Configuration")
     
     # 1. AUTHENTICATION
-    st.subheader("1. Google Cloud Auth")
+    st.subheader("1. System Status")
     auth_ready = False
+    creds = None 
+    robot_email = "Unknown"
     
     if "gcp_service_account" in st.secrets:
         try:
+            # Load Creds with Drive Scope
             creds = service_account.Credentials.from_service_account_info(
-                st.secrets["gcp_service_account"]
+                st.secrets["gcp_service_account"],
+                scopes=["https://www.googleapis.com/auth/cloud-platform", "https://www.googleapis.com/auth/drive"]
             )
             project_id = st.secrets["gcp_service_account"]["project_id"]
+            robot_email = st.secrets["gcp_service_account"]["client_email"]
             
-            # Initialize Vertex AI
-            vertexai.init(
-                project=project_id, 
-                location="us-central1", 
-                credentials=creds
-            )
+            vertexai.init(project=project_id, location="us-central1", credentials=creds)
             auth_ready = True
-            st.success(f"Connected: {project_id}")
+            st.success(f"✅ AI System Online")
+            st.caption(f"Project: {project_id}")
         except Exception as e:
             st.error(f"Secrets Error: {e}")
     else:
         st.warning("⚠️ No Secrets found.")
-        st.info("Paste TOML into App Settings > Secrets.")
 
-    # 2. AI MODEL CONFIG
+    # 2. ROBOT EMAIL (For Sharing)
     if auth_ready:
         st.divider()
-        st.subheader("2. AI Model Selection")
-        
-        # Exact Model IDs from Google
-        selected_model_name = st.selectbox(
-            "Select Text Model",
-            options=[
-                "gemini-2.5-flash",       
-                "gemini-2.5-pro",         
-                "gemini-2.0-flash-001",   
-                "gemini-1.5-flash-001",   
-            ],
-            index=0,
-            help="Select the Model ID exactly as it appears in Vertex AI."
-        )
-        
-        temperature = st.slider(
-            "Creativity (Temperature)", 
-            min_value=0.0, max_value=1.0, value=0.2, 
-            help="0.0 = Robot/Factual. 1.0 = Creative/Random."
-        )
+        st.subheader("📂 Folder Permissions")
+        st.info("You must 'Share' your Google Drive folder with this email address:")
+        st.code(robot_email, language=None)
+        st.caption("Copy this email -> Go to Drive -> Right Click Folder -> Share -> Paste.")
 
-    # 3. VA CHECKLIST
+    # 3. AI SETTINGS
     st.divider()
-    st.subheader("✅ Post Checklist")
-    st.info("""
-    1. **Image Safety:** If the client treats kids, the AI will generate a room/object photo to avoid safety blocks.
-    2. **Tone:** Check for "Marketing Fluff."
-    3. **SEO:** Is the Keyword included?
-    """)
+    st.subheader("🧠 Model Settings")
+    selected_model_name = st.selectbox(
+        "Text Model", 
+        ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-1.5-flash-001"], 
+        index=0
+    )
+    temperature = st.slider("Creativity", 0.0, 1.0, 0.2)
 
-# --- HELPER FUNCTIONS ---
+# --- FUNCTIONS ---
 
 def get_website_text(url):
-    """Scrapes the service page."""
     try:
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
+        headers = {'User-Agent': 'Mozilla/5.0'}
         response = requests.get(url, headers=headers, timeout=10)
         soup = BeautifulSoup(response.content, 'html.parser')
         text = " ".join([p.get_text() for p in soup.find_all(['h1', 'h2', 'h3', 'p'])])
         return text[:5000].strip()
-    except Exception as e:
-        return None
+    except: return None
 
 def generate_post_content(text, focus_topic, keyword, model_name, temp):
-    """Uses the SELECTED Gemini model to write the post."""
-    
     model = GenerativeModel(model_name)
-    
-    keyword_instruction = ""
-    if keyword:
-        keyword_instruction = f"MANDATORY: You MUST include the exact phrase '{keyword}' naturally in the Headline or first sentence."
+    keyword_instruction = f"MANDATORY: Include '{keyword}'." if keyword else ""
     
     prompt = f"""
-    You are a helpful Front Desk Receptionist for a local medical/service business. 
+    You are a Front Desk Receptionist. Write a Google Business Profile update.
+    CONTEXT: {text} | FOCUS: {focus_topic} | KEYWORD: {keyword}
+    GUIDELINES: No fluff ("Unleash", "Elevate"). Grade 8 English. Factual. {keyword_instruction}
     
-    CONTEXT SOURCE: {text}
-    FOCUS TOPIC: {focus_topic}
-    TARGET KEYWORD: {keyword if keyword else "Extract main entity from text"}
-
-    ---
-    STRICT GUIDELINES:
-    1. **Anti-Fluff:** Do NOT use words like: "Unleash," "Elevate," "Transform," "Magic."
-    2. **Voice:** Direct, warm, factual. Grade 8 English.
-    3. **Google NLP:** Focus on the specific Service Name and Location.
-    4. {keyword_instruction}
-    
-    *** CRITICAL IMAGE SAFETY RULE ***: 
-    If this business involves CHILDREN (e.g. ABA Therapy, Pediatrics) or PATIENTS, **DO NOT** describe people in the IMAGE_PROMPT. 
-    Instead, describe a warm, professional SETTING or OBJECTS (e.g. "A sunlit therapy room with colorful toys on a rug," "A tidy front desk," "A clipboard and stethoscope").
-    ---
+    *** IMAGE SAFETY ***: If topic involves CHILDREN/PATIENTS, prompt for a ROOM/OBJECT photo. NO PEOPLE.
 
     OUTPUT FORMAT:
-    HEADLINE: [Direct, Keyword-Rich, under 10 words]
-    BODY: [2-3 sentences max. Problem -> Solution -> Call to Action.]
-    IMAGE_PROMPT: [Photorealistic, candid, natural light, bokeh, 35mm lens. NO PEOPLE if the topic involves children. NO TEXT.]
+    HEADLINE: [Header]
+    BODY: [Body]
+    IMAGE_PROMPT: [Prompt]
     """
-    
-    response = model.generate_content(
-        prompt,
-        generation_config={"temperature": temp}
-    )
+    response = model.generate_content(prompt, generation_config={"temperature": temp})
     return response.text
 
 def generate_image(prompt):
-    """Uses Imagen 3 with error handling."""
+    # Try Imagen 3 first
     try:
         model = ImageGenerationModel.from_pretrained("imagen-3.0-generate-001")
-        
-        full_prompt = f"{prompt}, photorealistic, 4k resolution, professional photography, natural lighting, no text"
-        
-        images = model.generate_images(
-            prompt=full_prompt,
-            number_of_images=1,
-            language="en",
-            aspect_ratio="4:3", 
-            person_generation="allow_adult", # Still allows adults, but prompt will now avoid kids
-        )
+        images = model.generate_images(prompt=prompt+", photorealistic, 4k, no text", number_of_images=1, aspect_ratio="4:3", person_generation="allow_adult")
         return images[0]
+    except:
+        # Fallback to Imagen 2 if 3 fails
+        try:
+            model = ImageGenerationModel.from_pretrained("imagegeneration@006")
+            images = model.generate_images(prompt=prompt, number_of_images=1, aspect_ratio="4:3", person_generation="allow_adult")
+            return images[0]
+        except: return None
+
+def upload_to_drive(creds, folder_id, filename, file_path, mime_type):
+    try:
+        service = build('drive', 'v3', credentials=creds)
+        file_metadata = {'name': filename, 'parents': [folder_id]}
+        media = MediaFileUpload(file_path, mimetype=mime_type)
+        file = service.files().create(body=file_metadata, media_body=media, fields='id, webViewLink').execute()
+        return file.get('webViewLink')
     except Exception as e:
-        # Return None instead of crashing if blocked
-        print(f"Image Gen Error: {e}")
+        print(f"Drive Upload Error: {e}")
         return None
 
 # --- MAIN UI ---
 
 st.title("🏥 SEO Post Factory")
-st.markdown("Generate **Entity-Optimized Content** from a URL.")
+st.markdown("Generate content and **save directly to the client folder**.")
 st.divider()
 
 col1, col2 = st.columns([1, 1], gap="large")
 
 with col1:
-    st.subheader("1. Input")
-    url_input = st.text_input("Service Page URL", placeholder="https://client.com/teeth-whitening")
+    st.subheader("1. Input Details")
+    url_input = st.text_input("Service Page URL", placeholder="https://client.com/service")
     
     sub_col1, sub_col2 = st.columns(2)
-    with sub_col1:
-        keyword_input = st.text_input("Target Keyword (SEO)", placeholder="e.g. Dentist in Austin")
-    with sub_col2:
-        focus_input = st.text_input("Focus/Offer (Optional)", placeholder="e.g. New Patient Special")
+    with sub_col1: keyword_input = st.text_input("Target Keyword", placeholder="e.g. Dentist 78704")
+    with sub_col2: focus_input = st.text_input("Focus/Offer", placeholder="e.g. Summer Special")
     
+    st.divider()
+    
+    st.subheader("2. Where to Save?")
+    folder_id_input = st.text_input(
+        "Google Drive Folder ID", 
+        placeholder="e.g. 1A2b3C4d...",
+        help="Copy the ID from the end of the Google Drive URL."
+    )
+    
+    if not folder_id_input:
+        st.info("ℹ️ Leave blank to generate without saving to Drive.")
+
+    st.write("") # Spacer
     run_btn = st.button("✨ Generate Post", type="primary")
 
     if run_btn:
-        if not auth_ready:
-            st.error("⚠️ Authentication missing. Check sidebar.")
-        elif not url_input:
-            st.warning("Please enter a URL.")
-        else:
-            with st.status("Agent is working...", expanded=True) as status:
-                
-                # Step 1: Scrape
-                st.write("🕷️ Reading website content...")
-                site_text = get_website_text(url_input)
-                
-                if not site_text or len(site_text) < 50:
-                    status.update(label="Error reading website!", state="error")
-                    st.error("Could not scrape text. Try pasting text manually.")
-                    st.stop()
-                
-                # Step 2: Gemini Writes
-                st.write(f"🧠 {selected_model_name} is optimizing content...")
-                try:
-                    raw_output = generate_post_content(
-                        site_text, 
-                        focus_input, 
-                        keyword_input, 
-                        selected_model_name, 
-                        temperature
-                    )
-                except Exception as e:
-                    status.update(label="Gemini Error", state="error")
-                    st.error(f"Model Error: {e}")
-                    st.stop()
-                
-                # Step 3: Parse Logic
-                try:
-                    headline = raw_output.split("HEADLINE:")[1].split("BODY:")[0].strip()
-                    body_part = raw_output.split("BODY:")[1]
-                    body = body_part.split("IMAGE_PROMPT:")[0].strip()
-                    img_prompt = raw_output.split("IMAGE_PROMPT:")[1].strip()
-                except Exception as e:
-                    headline = "Error Parsing Output"
-                    body = raw_output
-                    img_prompt = f"Professional photo representing {focus_input}"
-                
-                # Step 4: Imagen Creates
-                st.write("📸 Imagen 3 is taking the photo...")
-                
-                generated_image = generate_image(img_prompt)
-                
-                if generated_image:
-                    img_byte_arr = io.BytesIO()
-                    generated_image.save(img_byte_arr, include_generation_parameters=False)
-                    img_byte_arr.seek(0)
-                    status.update(label="Complete!", state="complete", expanded=False)
-                else:
-                    status.update(label="Image Generation Blocked", state="warning")
-                    st.warning("⚠️ Image blocked by Safety Filters. Displaying text only.")
-                    img_byte_arr = None
+        if not auth_ready: st.error("Check Sidebar Auth"); st.stop()
+        if not url_input: st.warning("Please enter a URL"); st.stop()
+        
+        with st.status("Agent is working...", expanded=True) as status:
+            # 1. Scrape
+            st.write("🕷️ Reading website...")
+            site_text = get_website_text(url_input)
+            if not site_text: st.error("Scrape failed. Check URL."); st.stop()
+            
+            # 2. Text
+            st.write("🧠 Writing content...")
+            try:
+                raw_output = generate_post_content(site_text, focus_input, keyword_input, selected_model_name, temperature)
+                headline = raw_output.split("HEADLINE:")[1].split("BODY:")[0].strip()
+                body = raw_output.split("BODY:")[1].split("IMAGE_PROMPT:")[0].strip()
+                img_prompt = raw_output.split("IMAGE_PROMPT:")[1].strip()
+            except: 
+                headline = "Error Parsing"; body = raw_output; img_prompt = "Error"
+
+            # 3. Image
+            st.write("📸 Generating image...")
+            generated_image = generate_image(img_prompt)
+            
+            # 4. Save Logic
+            timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M")
+            base_name = f"Post_{timestamp}"
+            local_img_name = "temp_image.jpg"
+            img_link = None
+            doc_link = None
+            
+            if generated_image:
+                generated_image.save(local_img_name, include_generation_parameters=False)
+                # Upload Image
+                if folder_id_input:
+                    st.write("☁️ Uploading Image to Drive...")
+                    img_link = upload_to_drive(creds, folder_id_input, f"{base_name}.jpg", local_img_name, "image/jpeg")
+
+            # Upload Text
+            if folder_id_input:
+                st.write("☁️ Uploading Text to Drive...")
+                text_content = f"HEADLINE: {headline}\n\nBODY: {body}\n\nPROMPT: {img_prompt}\n\nSOURCE: {url_input}"
+                with open("temp_text.txt", "w") as f: f.write(text_content)
+                doc_link = upload_to_drive(creds, folder_id_input, f"{base_name}.txt", "temp_text.txt", "text/plain")
+            
+            status.update(label="Complete!", state="complete", expanded=False)
 
             # --- RESULT DISPLAY ---
             with col2:
-                st.subheader("2. Result")
+                st.subheader("3. Final Result")
                 
-                if img_byte_arr:
-                    st.image(img_byte_arr, use_column_width=True, caption="Generated by Imagen 3")
-                    st.download_button(
-                        label="⬇️ Download Image",
-                        data=img_byte_arr,
-                        file_name="gbp_post_image.jpg",
-                        mime="image/jpeg"
-                    )
+                # Show Image
+                if generated_image: 
+                    st.image(local_img_name, caption="Generated by Imagen")
                 else:
-                    st.info("No image generated. Try changing the focus to a non-human subject.")
+                    st.warning("Image Blocked (Safety Filter)")
+
+                # Show Links
+                if folder_id_input:
+                    if img_link or doc_link:
+                        st.success(f"✅ Saved to Drive Folder: {folder_id_input}")
+                        if img_link: st.markdown(f"📂 [View Image in Drive]({img_link})")
+                        if doc_link: st.markdown(f"📄 [View Text in Drive]({doc_link})")
+                    else:
+                        st.error("❌ Save Failed. Did you share the folder with the Robot Email? (Check Sidebar)")
                 
                 st.divider()
                 st.text_input("Headline", value=headline)
-                st.text_area("Caption", value=body, height=150)
-                st.caption(f"**Prompt:** {img_prompt}")
-
-with st.expander("ℹ️ How to use this tool"):
-    st.markdown("""
-    1. **Paste URL:** Enter the client's specific service page.
-    2. **Keyword:** Enter the EXACT phrase you want to rank for.
-    3. **Review:** Uses the **Selected Gemini Model** for text and **Imagen 3** for photos.
-    """)
+                st.text_area("Body", value=body, height=150)
