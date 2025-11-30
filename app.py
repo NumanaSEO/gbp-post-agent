@@ -59,7 +59,7 @@ with st.sidebar:
         
         st.divider()
         st.info("""
-        **VA Checklist:**
+        **GBP Checklist:**
         1. **Safe Image?** (No people/kids)
         2. **No Fluff?** (No "Unleash/Elevate")
         3. **SEO?** (Keyword included)
@@ -108,7 +108,7 @@ def generate_image(prompt):
 
 # --- MAIN UI ---
 
-st.title("🏥 SEO Post Factory")
+st.title("🏥 GBP Post Factory")
 st.markdown("Generate **Entity-Optimized Content**.")
 st.divider()
 
