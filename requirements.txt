@@ -1,6 +1,5 @@
 streamlit
 google-cloud-aiplatform
 google-auth
-google-api-python-client
 requests
 beautifulsoup4
