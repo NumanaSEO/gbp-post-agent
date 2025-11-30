@@ -37,7 +37,8 @@ with st.sidebar:
             )
             project_id = st.secrets["gcp_service_account"]["project_id"]
             
-            # Initialize Vertex AI
+            # Initialize Vertex AI (Defaulting to us-central1)
+            # If you still get 404s, try changing this to "us-west1" or "us-east4"
             vertexai.init(
                 project=project_id, 
                 location="us-central1", 
@@ -56,18 +57,17 @@ with st.sidebar:
         st.divider()
         st.subheader("2. AI Model Selection")
         
-        # The Model Picker
+        # UPDATED: Matching your table EXACTLY
         selected_model_name = st.selectbox(
             "Select Text Model",
             options=[
-                "gemini-2.5-flash-001",   # Fast & Smart (Default)
-                "gemini-2.5-pro-001",     # High Reasoning
-                "gemini-1.5-flash-001",   # Stable Backup
-                "gemini-1.5-pro-001",     # Stable Pro Backup
-                "gemini-2.0-flash-exp",   # Experimental
+                "gemini-2.5-flash",       # Exact match from your table
+                "gemini-2.5-pro",         # Exact match from your table
+                "gemini-2.0-flash-001",   # Exact match from your table
+                "gemini-1.5-flash-001",   # Fallback
             ],
             index=0,
-            help="If a model returns a 404/Error, switch to a different version."
+            help="Select the Model ID exactly as it appears in Vertex AI."
         )
         
         # Temperature Slider
@@ -79,7 +79,7 @@ with st.sidebar:
 
     # 3. VA CHECKLIST
     st.divider()
-    st.subheader("✅ VA Checklist")
+    st.subheader("✅ Checklist")
     st.info("""
     1. **Image:** No text/logos? Realistic?
     2. **Tone:** No "Unleash," "Elevate," or "Magic"?
@@ -141,6 +141,7 @@ def generate_post_content(text, focus_topic, keyword, model_name, temp):
 
 def generate_image(prompt):
     """Uses Imagen 3."""
+    # Note: If this fails, try "imagegeneration@006"
     model = ImageGenerationModel.from_pretrained("imagen-3.0-generate-001")
     
     full_prompt = f"{prompt}, photorealistic, 4k resolution, highly detailed, professional photography, natural lighting, bokeh, 35mm lens, no text, no watermarks"
@@ -191,10 +192,9 @@ with col1:
                     st.error("Could not scrape text. Website might block bots. Try pasting text manually.")
                     st.stop()
                 
-                # Step 2: Gemini Writes (Using Selected Model)
+                # Step 2: Gemini Writes
                 st.write(f"🧠 {selected_model_name} is optimizing content...")
                 try:
-                    # Passing all the new arguments
                     raw_output = generate_post_content(
                         site_text, 
                         focus_input, 
@@ -204,8 +204,8 @@ with col1:
                     )
                 except Exception as e:
                     status.update(label="Gemini Error", state="error")
-                    st.error(f"Error with model {selected_model_name}: {e}")
-                    st.info("Try selecting a different model in the Sidebar!")
+                    st.error(f"Model Error: {e}")
+                    st.info("Troubleshooting: Try switching models in the sidebar, or check if your Google Cloud Project has 'Vertex AI' enabled in the 'us-central1' region.")
                     st.stop()
                 
                 # Step 3: Parse Logic
@@ -261,6 +261,6 @@ with col1:
 with st.expander("ℹ️ How to use this tool"):
     st.markdown("""
     1. **Paste URL:** Enter the client's specific service page.
-    2. **Keyword:** Enter the EXACT phrase you want to rank for (e.g. "Implants near me").
-    3. **Review:** The agent uses the **Selected Gemini Model** for text and **Imagen 3** for photos.
+    2. **Keyword:** Enter the EXACT phrase you want to rank for.
+    3. **Review:** Uses the **Selected Gemini Model** for text and **Imagen 3** for photos.
     """)
