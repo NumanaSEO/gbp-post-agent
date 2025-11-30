@@ -44,19 +44,17 @@ with st.sidebar:
             vertexai.init(project=project_id, location="us-central1", credentials=creds)
             auth_ready = True
             st.success(f"✅ AI System Online")
-            st.caption(f"Project: {project_id}")
         except Exception as e:
             st.error(f"Secrets Error: {e}")
     else:
         st.warning("⚠️ No Secrets found.")
 
-    # 2. ROBOT EMAIL (For Sharing)
+    # 2. FOLDER PERMISSIONS
     if auth_ready:
         st.divider()
         st.subheader("📂 Folder Permissions")
         st.info("You must 'Share' your Google Drive folder with this email address:")
         st.code(robot_email, language=None)
-        st.caption("Copy this email -> Go to Drive -> Right Click Folder -> Share -> Paste.")
 
     # 3. AI SETTINGS
     st.divider()
@@ -67,6 +65,18 @@ with st.sidebar:
         index=0
     )
     temperature = st.slider("Creativity", 0.0, 1.0, 0.2)
+
+    # 4. VA CHECKLIST (RESTORED)
+    st.divider()
+    st.subheader("✅ Post Checklist")
+    st.info("""
+    **Before saving, check these 4 things:**
+    
+    1. **Image Safety:** If the client treats kids, ensure the image is a Room or Object (no people).
+    2. **Realism:** Does the image look like a real photo? No gibberish text?
+    3. **Tone:** Did it say "Unleash" or "Elevate"? If so, re-run it.
+    4. **SEO:** Is the Target Keyword included?
+    """)
 
 # --- FUNCTIONS ---
 
@@ -113,15 +123,22 @@ def generate_image(prompt):
         except: return None
 
 def upload_to_drive(creds, folder_id, filename, file_path, mime_type):
+    """Uploads with Shared Drive Support and Error Reporting."""
     try:
         service = build('drive', 'v3', credentials=creds)
         file_metadata = {'name': filename, 'parents': [folder_id]}
         media = MediaFileUpload(file_path, mimetype=mime_type)
-        file = service.files().create(body=file_metadata, media_body=media, fields='id, webViewLink').execute()
-        return file.get('webViewLink')
+        
+        file = service.files().create(
+            body=file_metadata, 
+            media_body=media, 
+            fields='id, webViewLink',
+            supportsAllDrives=True 
+        ).execute()
+        
+        return {"success": True, "link": file.get('webViewLink')}
     except Exception as e:
-        print(f"Drive Upload Error: {e}")
-        return None
+        return {"success": False, "error": str(e)}
 
 # --- MAIN UI ---
 
@@ -182,22 +199,20 @@ with col1:
             timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M")
             base_name = f"Post_{timestamp}"
             local_img_name = "temp_image.jpg"
-            img_link = None
-            doc_link = None
+            img_result = {"success": False}
+            doc_result = {"success": False}
             
             if generated_image:
                 generated_image.save(local_img_name, include_generation_parameters=False)
-                # Upload Image
                 if folder_id_input:
-                    st.write("☁️ Uploading Image to Drive...")
-                    img_link = upload_to_drive(creds, folder_id_input, f"{base_name}.jpg", local_img_name, "image/jpeg")
+                    st.write("☁️ Uploading Image...")
+                    img_result = upload_to_drive(creds, folder_id_input, f"{base_name}.jpg", local_img_name, "image/jpeg")
 
-            # Upload Text
             if folder_id_input:
-                st.write("☁️ Uploading Text to Drive...")
+                st.write("☁️ Uploading Text...")
                 text_content = f"HEADLINE: {headline}\n\nBODY: {body}\n\nPROMPT: {img_prompt}\n\nSOURCE: {url_input}"
                 with open("temp_text.txt", "w") as f: f.write(text_content)
-                doc_link = upload_to_drive(creds, folder_id_input, f"{base_name}.txt", "temp_text.txt", "text/plain")
+                doc_result = upload_to_drive(creds, folder_id_input, f"{base_name}.txt", "temp_text.txt", "text/plain")
             
             status.update(label="Complete!", state="complete", expanded=False)
 
@@ -213,12 +228,16 @@ with col1:
 
                 # Show Links
                 if folder_id_input:
-                    if img_link or doc_link:
-                        st.success(f"✅ Saved to Drive Folder: {folder_id_input}")
-                        if img_link: st.markdown(f"📂 [View Image in Drive]({img_link})")
-                        if doc_link: st.markdown(f"📄 [View Text in Drive]({doc_link})")
-                    else:
-                        st.error("❌ Save Failed. Did you share the folder with the Robot Email? (Check Sidebar)")
+                    if img_result["success"] or doc_result["success"]:
+                        st.success(f"✅ Saved to Drive!")
+                        if img_result.get("link"): st.markdown(f"[📂 Open Image]({img_result['link']})")
+                        if doc_result.get("link"): st.markdown(f"[📄 Open Text]({doc_result['link']})")
+                    
+                    # ERROR DISPLAY
+                    if not img_result["success"] and generated_image:
+                        st.error(f"Image Upload Failed: {img_result.get('error')}")
+                    if not doc_result["success"]:
+                        st.error(f"Text Upload Failed: {doc_result.get('error')}")
                 
                 st.divider()
                 st.text_input("Headline", value=headline)
