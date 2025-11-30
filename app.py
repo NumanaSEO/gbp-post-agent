@@ -75,18 +75,38 @@ def get_website_text(url):
         return text[:5000].strip()
     except: return None
 
-def generate_post_content(text, focus_topic, keyword, model_name, temp):
+def generate_post_content(text, focus_input, keyword, model_name, temp, post_type, vibe):
     model = GenerativeModel(model_name)
+    
+    # 1. TONE LOGIC
+    tone_instruction = "Tone: Warm, friendly, helpful. Grade 8 English."
+    if vibe == "High-End / Luxury":
+        tone_instruction = "Tone: Sophisticated, polished, exclusive, professional. Grade 10 English."
+    elif vibe == "Urgent / Direct":
+        tone_instruction = "Tone: Direct, concise, action-oriented. Short sentences."
+
+    # 2. POST TYPE LOGIC
+    task_instruction = f"Write a post highlighting the benefits of the service found in CONTEXT. Focus on: {focus_input}."
+    if post_type == "Review Spotlight":
+        task_instruction = f"The 'FOCUS INPUT' provided is a patient review (or topic). Write a 'Thank You' post appreciating the feedback. Do not invent a name if not provided."
+    elif post_type == "FAQ / Education":
+        task_instruction = f"Write a 'Did You Know?' or 'FAQ' post based on the CONTEXT. Answer a common patient question related to: {focus_input}."
+
     keyword_instruction = f"MANDATORY: Include '{keyword}'." if keyword else ""
     
     prompt = f"""
-    You are a Front Desk Receptionist. Write a Google Business Profile update.
-    CONTEXT: {text} | FOCUS: {focus_topic} | KEYWORD: {keyword}
+    You are a Social Media Manager for a medical practice. Write a Google Business Profile update.
+    
+    CONTEXT SOURCE: {text}
+    FOCUS INPUT: {focus_input}
+    KEYWORD: {keyword}
+    
+    TASK: {task_instruction}
     
     STRICT GUIDELINES:
     1. **Start Immediately:** No "Hello from..." or "We want to share." Start with the problem/solution.
-    2. **No Fluff:** Ban "Unleash", "Elevate", "Magic".
-    3. **Tone:** Warm, professional, Grade 8 English.
+    2. **No Fluff:** Ban "Unleash", "Elevate", "Magic", "Realm".
+    3. {tone_instruction}
     4. {keyword_instruction}
     
     *** IMAGE VISUAL RULES (CRITICAL) ***: 
@@ -94,12 +114,12 @@ def generate_post_content(text, focus_topic, keyword, model_name, temp):
     2. **Accuracy:** Look at the medical specialty in the CONTEXT. 
        - If OB/GYN or General Doctor: Specify "Standard Medical Examination Table with paper roll". **Explicitly state: "NOT a dental chair".**
        - If Dentist: Specify "Dental chair".
-       - If Therapy: Specify "Comfortable couch, soft lighting".
+       - If Therapy: Specify "Comfortable couch, soft lighting, rug".
 
     OUTPUT FORMAT:
     HEADLINE: [Header]
     BODY: [Body]
-    IMAGE_PROMPT: [Prompt]
+    IMAGE_PROMPT: [Prompt based on Visual Rules]
     """
     
     response = model.generate_content(prompt, generation_config={"temperature": temp})
@@ -131,11 +151,27 @@ st.divider()
 col1, col2 = st.columns([1, 1], gap="large")
 
 with col1:
-    st.subheader("1. Input Details")
+    st.subheader("1. Strategy")
+    
+    # NEW: Selectors for Strategy
+    c1, c2 = st.columns(2)
+    with c1:
+        post_type = st.selectbox("Post Type", ["Service Highlight", "Review Spotlight", "FAQ / Education"])
+    with c2:
+        vibe = st.selectbox("Brand Vibe", ["Friendly / Warm", "High-End / Luxury", "Urgent / Direct"])
+
+    st.subheader("2. Inputs")
     url_input = st.text_input("Service Page URL", placeholder="https://client.com/service")
+    
     sub_col1, sub_col2 = st.columns(2)
-    with sub_col1: keyword_input = st.text_input("Target Keyword", placeholder="e.g. Dentist 78704")
-    with sub_col2: focus_input = st.text_input("Focus/Offer", placeholder="e.g. Summer Special")
+    with sub_col1: 
+        keyword_input = st.text_input("Target Keyword", placeholder="e.g. Dentist 78704")
+    with sub_col2: 
+        # Dynamic Label based on Post Type
+        focus_label = "Focus / Offer"
+        if post_type == "Review Spotlight": focus_label = "Paste Review Text Here"
+        elif post_type == "FAQ / Education": focus_label = "Question to Answer"
+        focus_input = st.text_input(focus_label, placeholder="e.g. Summer Special OR Review text")
     
     st.write("") 
     run_btn = st.button("✨ Generate Post", type="primary")
@@ -153,20 +189,24 @@ with col1:
             # 2. Text
             st.write("🧠 Writing content...")
             
-            # INITIALIZE VARIABLES SAFELY (Fixes NameError)
+            # INITIALIZE VARIABLES SAFELY
             headline = "Error Generating Headline"
             body = "Error Generating Body"
             img_prompt = ""
             
             try:
-                raw_output = generate_post_content(site_text, focus_input, keyword_input, selected_model_name, temperature)
+                # Updated Function Call
+                raw_output = generate_post_content(
+                    site_text, focus_input, keyword_input, 
+                    selected_model_name, temperature, 
+                    post_type, vibe
+                )
                 # Parse
                 headline = raw_output.split("HEADLINE:")[1].split("BODY:")[0].strip()
                 body = raw_output.split("BODY:")[1].split("IMAGE_PROMPT:")[0].strip()
                 img_prompt = raw_output.split("IMAGE_PROMPT:")[1].strip()
             except Exception as e:
-                st.error(f"Text Generation/Parsing Error: {e}")
-                # We do NOT stop here, so we can see what happened
+                st.error(f"Text Generation Error: {e}")
 
             # 3. Image
             generated_image = None
@@ -176,7 +216,7 @@ with col1:
             else:
                 st.warning("Skipping Image Gen (No Prompt detected)")
 
-            # 4. Process Image for Display
+            # 4. Save Temp
             local_img_name = "temp_image.jpg"
             if generated_image:
                 generated_image.save(local_img_name, include_generation_parameters=False)
@@ -185,7 +225,7 @@ with col1:
 
             # --- RESULT DISPLAY ---
             with col2:
-                st.subheader("2. Final Result")
+                st.subheader("3. Final Result")
                 
                 # Show Image
                 if generated_image: 
