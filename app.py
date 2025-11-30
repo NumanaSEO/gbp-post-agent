@@ -79,16 +79,28 @@ def get_website_text(url):
 def generate_post_content(text, focus_topic, keyword, model_name, temp):
     model = GenerativeModel(model_name)
     keyword_instruction = f"MANDATORY: Include '{keyword}'." if keyword else ""
+    
     prompt = f"""
-    You are a Front Desk Receptionist. Write a Google Business Profile update.
-    CONTEXT: {text} | FOCUS: {focus_topic} | KEYWORD: {keyword}
-    GUIDELINES: No fluff ("Unleash", "Elevate"). Grade 8 English. Factual. {keyword_instruction}
+    You are a Front Desk Receptionist for a medical practice. Write a Google Business Profile update.
+    
+    CONTEXT: {text} 
+    FOCUS: {focus_topic} 
+    KEYWORD: {keyword}
+    
+    STRICT GUIDELINES:
+    1. **No Fluff:** Ban words like "Unleash", "Elevate", "Transform", "Magic".
+    2. **Start Immediately:** Do NOT say "Hello from [Name]" or "We want to share." Start directly with the problem or the keyword.
+    3. **Tone:** Warm, professional, Grade 8 English.
+    4. {keyword_instruction}
+    
     IMAGE SAFETY: If topic involves CHILDREN/PATIENTS, prompt for a ROOM/OBJECT photo. NO PEOPLE.
+
     OUTPUT FORMAT:
     HEADLINE: [Header]
     BODY: [Body]
     IMAGE_PROMPT: [Prompt]
     """
+    
     response = model.generate_content(prompt, generation_config={"temperature": temp})
     return response.text
 
