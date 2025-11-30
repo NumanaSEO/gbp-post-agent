@@ -246,4 +246,21 @@ with col1:
                 # Download Button for Image
                 st.download_button(
                     label="⬇️ Download Image",
-                    data=img_byte_ar
+                    data=img_byte_arr,
+                    file_name="gbp_post_image.jpg",
+                    mime="image/jpeg"
+                )
+                
+                st.divider()
+                
+                # Display Text
+                st.text_input("Headline", value=headline)
+                st.text_area("Caption", value=body, height=150)
+                st.caption(f"**Model:** {selected_model_name} | **Prompt:** {img_prompt}")
+
+with st.expander("ℹ️ How to use this tool"):
+    st.markdown("""
+    1. **Paste URL:** Enter the client's specific service page.
+    2. **Keyword:** Enter the EXACT phrase you want to rank for (e.g. "Implants near me").
+    3. **Review:** The agent uses the **Selected Gemini Model** for text and **Imagen 3** for photos.
+    """)
