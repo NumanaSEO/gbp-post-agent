@@ -3,13 +3,10 @@ import vertexai
 from vertexai.generative_models import GenerativeModel
 from vertexai.preview.vision_models import ImageGenerationModel
 from google.oauth2 import service_account
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload
 import requests
 from bs4 import BeautifulSoup
 import io
-import datetime
-import re # NEW: For extracting ID from URL
+import os
 
 # --- PAGE CONFIGURATION ---
 st.set_page_config(page_title="Agency Post Factory", page_icon="🏥", layout="wide")
@@ -22,25 +19,24 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- SIDEBAR: AUTH & CONFIG ---
+# --- SIDEBAR: CONFIG ---
 with st.sidebar:
     st.title("⚙️ Configuration")
     
     # 1. AUTHENTICATION
     st.subheader("1. System Status")
     auth_ready = False
-    creds = None 
-    robot_email = "Unknown"
     
     if "gcp_service_account" in st.secrets:
         try:
+            # Load Creds (Only Cloud Platform scope needed now)
             creds = service_account.Credentials.from_service_account_info(
                 st.secrets["gcp_service_account"],
-                scopes=["https://www.googleapis.com/auth/cloud-platform", "https://www.googleapis.com/auth/drive"]
+                scopes=["https://www.googleapis.com/auth/cloud-platform"]
             )
             project_id = st.secrets["gcp_service_account"]["project_id"]
-            robot_email = st.secrets["gcp_service_account"]["client_email"]
             
+            # Initialize Vertex
             vertexai.init(project=project_id, location="us-central1", credentials=creds)
             auth_ready = True
             st.success(f"✅ AI System Online")
@@ -49,34 +45,27 @@ with st.sidebar:
     else:
         st.warning("⚠️ No Secrets found.")
 
-    # 2. PERMISSIONS
+    # 2. AI SETTINGS
     if auth_ready:
         st.divider()
-        st.subheader("📂 Folder Permissions")
-        st.info("Share your Drive Folder with:")
-        st.code(robot_email, language=None)
-
-    # 3. SETTINGS
-    st.divider()
-    selected_model_name = st.selectbox("Text Model", ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-1.5-flash-001"], index=0)
-    temperature = st.slider("Creativity", 0.0, 1.0, 0.2)
-    
-    st.divider()
-    st.info("VA Checklist: \n1. Safe Image? \n2. No Fluff? \n3. Keyword included?")
+        st.subheader("🧠 Model Settings")
+        # Updated Model List (Exact IDs)
+        selected_model_name = st.selectbox(
+            "Text Model", 
+            ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-1.5-flash-001"], 
+            index=0
+        )
+        temperature = st.slider("Creativity", 0.0, 1.0, 0.2)
+        
+        st.divider()
+        st.info("""
+        **VA Checklist:**
+        1. **Safe Image?** (No people/kids)
+        2. **No Fluff?** (No "Unleash/Elevate")
+        3. **SEO?** (Keyword included)
+        """)
 
 # --- FUNCTIONS ---
-
-def extract_folder_id(input_string):
-    """Extracts ID from a full URL or returns the ID if pasted directly."""
-    if not input_string: return None
-    
-    # Logic: Look for the part after /folders/
-    match = re.search(r'folders/([a-zA-Z0-9_-]+)', input_string)
-    if match:
-        return match.group(1)
-    
-    # If no URL pattern found, assume the user pasted the ID directly
-    return input_string.strip()
 
 def get_website_text(url):
     try:
@@ -104,62 +93,34 @@ def generate_post_content(text, focus_topic, keyword, model_name, temp):
     return response.text
 
 def generate_image(prompt):
+    # Try Imagen 3 first
     try:
         model = ImageGenerationModel.from_pretrained("imagen-3.0-generate-001")
         images = model.generate_images(prompt=prompt+", photorealistic, 4k, no text", number_of_images=1, aspect_ratio="4:3", person_generation="allow_adult")
         return images[0]
     except:
+        # Fallback to Imagen 2
         try:
             model = ImageGenerationModel.from_pretrained("imagegeneration@006")
             images = model.generate_images(prompt=prompt, number_of_images=1, aspect_ratio="4:3", person_generation="allow_adult")
             return images[0]
         except: return None
 
-def upload_to_drive(creds, folder_id, filename, file_path, mime_type):
-    try:
-        service = build('drive', 'v3', credentials=creds)
-        file_metadata = {'name': filename, 'parents': [folder_id]}
-        media = MediaFileUpload(file_path, mimetype=mime_type)
-        file = service.files().create(
-            body=file_metadata, media_body=media, fields='id, webViewLink', supportsAllDrives=True
-        ).execute()
-        return {"success": True, "link": file.get('webViewLink')}
-    except Exception as e:
-        return {"success": False, "error": str(e)}
-
 # --- MAIN UI ---
 
 st.title("🏥 SEO Post Factory")
-st.markdown("Generate content and **save directly to the client folder**.")
+st.markdown("Generate **Entity-Optimized Content**.")
 st.divider()
 
 col1, col2 = st.columns([1, 1], gap="large")
 
 with col1:
     st.subheader("1. Input Details")
-    url_input = st.text_input("Service Page URL")
+    url_input = st.text_input("Service Page URL", placeholder="https://client.com/service")
     sub_col1, sub_col2 = st.columns(2)
-    with sub_col1: keyword_input = st.text_input("Keyword")
-    with sub_col2: focus_input = st.text_input("Focus/Offer")
+    with sub_col1: keyword_input = st.text_input("Target Keyword", placeholder="e.g. Dentist 78704")
+    with sub_col2: focus_input = st.text_input("Focus/Offer", placeholder="e.g. Summer Special")
     
-    st.divider()
-    
-    st.subheader("2. Where to Save?")
-    # UPDATED INPUT LABEL
-    folder_input_raw = st.text_input(
-        "Google Drive Folder URL (or ID)", 
-        placeholder="Paste the full link: https://drive.google.com/drive/folders/...",
-        help="You can paste the full URL from your browser bar."
-    )
-    
-    # CLEAN THE ID
-    folder_id_clean = extract_folder_id(folder_input_raw)
-    
-    if folder_id_clean:
-        st.caption(f"✅ Detected Folder ID: `{folder_id_clean}`")
-    else:
-        st.info("ℹ️ Leave blank to generate without saving.")
-
     st.write("") 
     run_btn = st.button("✨ Generate Post", type="primary")
 
@@ -187,43 +148,34 @@ with col1:
             st.write("📸 Generating image...")
             generated_image = generate_image(img_prompt)
             
-            # 4. Save Logic
-            timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M")
-            base_name = f"Post_{timestamp}"
+            # 4. Process Image for Display
             local_img_name = "temp_image.jpg"
-            img_result = {"success": False}
-            doc_result = {"success": False}
-            
             if generated_image:
+                # We still save to a local temp file because Vertex SDK requires it
                 generated_image.save(local_img_name, include_generation_parameters=False)
-                if folder_id_clean:
-                    st.write("☁️ Uploading Image...")
-                    img_result = upload_to_drive(creds, folder_id_clean, f"{base_name}.jpg", local_img_name, "image/jpeg")
-
-            if folder_id_clean:
-                st.write("☁️ Uploading Text...")
-                text_content = f"HEADLINE: {headline}\n\nBODY: {body}\n\nPROMPT: {img_prompt}\n\nSOURCE: {url_input}"
-                with open("temp_text.txt", "w") as f: f.write(text_content)
-                doc_result = upload_to_drive(creds, folder_id_clean, f"{base_name}.txt", "temp_text.txt", "text/plain")
             
             status.update(label="Complete!", state="complete", expanded=False)
 
             # --- RESULT DISPLAY ---
             with col2:
-                st.subheader("3. Final Result")
-                if generated_image: st.image(local_img_name)
-                else: st.warning("Image Blocked (Safety Filter)")
-
-                if folder_id_clean:
-                    if img_result["success"] or doc_result["success"]:
-                        st.success(f"✅ Saved to Drive!")
-                        if img_result.get("link"): st.markdown(f"[📂 Open Image]({img_result['link']})")
-                        if doc_result.get("link"): st.markdown(f"[📄 Open Text]({doc_result['link']})")
-                    if not img_result["success"] and generated_image:
-                        st.error(f"Image Upload Failed: {img_result.get('error')}")
-                    if not doc_result["success"]:
-                        st.error(f"Text Upload Failed: {doc_result.get('error')}")
+                st.subheader("2. Final Result")
                 
+                # Show Image
+                if generated_image: 
+                    st.image(local_img_name, caption="Generated by Imagen")
+                    
+                    # Create Download Button
+                    with open(local_img_name, "rb") as f:
+                        btn = st.download_button(
+                            label="⬇️ Download Image",
+                            data=f,
+                            file_name="post_image.jpg",
+                            mime="image/jpeg"
+                        )
+                else:
+                    st.warning("Image Blocked (Safety Filter)")
+
                 st.divider()
-                st.text_input("Headline", headline)
-                st.text_area("Body", body)
+                st.text_input("Headline", value=headline)
+                st.text_area("Body", value=body, height=150)
+                st.caption(f"Prompt Used: {img_prompt}")
