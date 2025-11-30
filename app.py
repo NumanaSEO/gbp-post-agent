@@ -6,7 +6,6 @@ from google.oauth2 import service_account
 import requests
 from bs4 import BeautifulSoup
 import io
-from PIL import Image
 
 # --- PAGE CONFIGURATION ---
 st.set_page_config(page_title="Agency Post Factory", page_icon="🏥", layout="wide")
@@ -29,11 +28,14 @@ with st.sidebar:
     
     if "gcp_service_account" in st.secrets:
         try:
+            # Load Creds (Only Cloud Platform scope needed)
             creds = service_account.Credentials.from_service_account_info(
                 st.secrets["gcp_service_account"],
                 scopes=["https://www.googleapis.com/auth/cloud-platform"]
             )
             project_id = st.secrets["gcp_service_account"]["project_id"]
+            
+            # Initialize Vertex
             vertexai.init(project=project_id, location="us-central1", credentials=creds)
             auth_ready = True
             st.success(f"✅ AI System Online")
@@ -56,6 +58,16 @@ with st.sidebar:
         st.divider()
         st.subheader("📸 Real Photo Override")
         uploaded_file = st.file_uploader("Upload Client Photo", type=['jpg', 'png', 'jpeg'], help="If you upload a photo here, the AI Image Generator will be skipped.")
+
+        # 3. GBP Post CHECKLIST (RESTORED)
+        st.divider()
+        st.info("""
+        **VA Quality Checklist:**
+        1. **Safe Image?** (No people/kids if AI generated).
+        2. **Accurate?** (Is it an Exam Table or a Dental Chair?).
+        3. **No Fluff?** (Did it say "Unleash"? Re-run it).
+        4. **SEO?** (Target Keyword included naturally?).
+        """)
 
 # --- FUNCTIONS ---
 
@@ -138,7 +150,7 @@ def generate_image(prompt):
 
 # --- MAIN UI ---
 
-st.title("🏥 SEO Post Factory")
+st.title("🏥 GBP Post Factory")
 st.markdown("Generate **Entity-Optimized Content**.")
 st.divider()
 
@@ -226,7 +238,6 @@ with col1:
                 # CASE A: USER UPLOADED PHOTO
                 if uploaded_file:
                     st.image(uploaded_file, caption="User Uploaded Photo")
-                    # No download button needed (user already has it), but we could add one if they want to re-download
                 
                 # CASE B: AI GENERATED PHOTO
                 elif generated_image: 
