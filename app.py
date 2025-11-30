@@ -62,7 +62,7 @@ with st.sidebar:
         # 3. GBP Post CHECKLIST (RESTORED)
         st.divider()
         st.info("""
-        **VA Quality Checklist:**
+        **GBP Post Quality Checklist:**
         1. **Safe Image?** (No people/kids if AI generated).
         2. **Accurate?** (Is it an Exam Table or a Dental Chair?).
         3. **No Fluff?** (Did it say "Unleash"? Re-run it).
