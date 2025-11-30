@@ -6,7 +6,6 @@ from google.oauth2 import service_account
 import requests
 from bs4 import BeautifulSoup
 import io
-import os
 
 # --- PAGE CONFIGURATION ---
 st.set_page_config(page_title="Agency Post Factory", page_icon="🏥", layout="wide")
@@ -29,7 +28,7 @@ with st.sidebar:
     
     if "gcp_service_account" in st.secrets:
         try:
-            # Load Creds (Only Cloud Platform scope needed now)
+            # Load Creds (Only Cloud Platform scope needed)
             creds = service_account.Credentials.from_service_account_info(
                 st.secrets["gcp_service_account"],
                 scopes=["https://www.googleapis.com/auth/cloud-platform"]
@@ -49,7 +48,6 @@ with st.sidebar:
     if auth_ready:
         st.divider()
         st.subheader("🧠 Model Settings")
-        # Updated Model List (Exact IDs)
         selected_model_name = st.selectbox(
             "Text Model", 
             ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-1.5-flash-001"], 
@@ -59,10 +57,11 @@ with st.sidebar:
         
         st.divider()
         st.info("""
-        **GBP Checklist:**
+        **VA Checklist:**
         1. **Safe Image?** (No people/kids)
-        2. **No Fluff?** (No "Unleash/Elevate")
-        3. **SEO?** (Keyword included)
+        2. **Accurate?** (Is it a Dental chair or Medical table?)
+        3. **No Fluff?** (No "Unleash/Elevate")
+        4. **SEO?** (Keyword included)
         """)
 
 # --- FUNCTIONS ---
@@ -82,9 +81,7 @@ def generate_post_content(text, focus_topic, keyword, model_name, temp):
     
     prompt = f"""
     You are a Front Desk Receptionist. Write a Google Business Profile update.
-    CONTEXT: {text} 
-    FOCUS: {focus_topic} 
-    KEYWORD: {keyword}
+    CONTEXT: {text} | FOCUS: {focus_topic} | KEYWORD: {keyword}
     
     STRICT GUIDELINES:
     1. **Start Immediately:** No "Hello from..." or "We want to share." Start with the problem/solution.
@@ -96,22 +93,38 @@ def generate_post_content(text, focus_topic, keyword, model_name, temp):
     1. **Safety:** If topic involves CHILDREN/PATIENTS, prompt for a ROOM/OBJECT photo (No People).
     2. **Accuracy:** Look at the medical specialty in the CONTEXT. 
        - If OB/GYN or General Doctor: Specify "Standard Medical Examination Table with paper roll". **Explicitly state: "NOT a dental chair".**
-       - If Therapy/Psych: Specify "Comfortable couch, soft lighting, rug".
        - If Dentist: Specify "Dental chair".
-       - **Match the furniture to the doctor type.**
+       - If Therapy: Specify "Comfortable couch, soft lighting".
 
     OUTPUT FORMAT:
     HEADLINE: [Header]
     BODY: [Body]
-    IMAGE_PROMPT: [Detailed prompt based on Visual Rules above]
+    IMAGE_PROMPT: [Prompt]
     """
     
     response = model.generate_content(prompt, generation_config={"temperature": temp})
     return response.text
 
+def generate_image(prompt):
+    # Skip if prompt is empty/error
+    if not prompt or prompt == "Error": return None
+
+    # Try Imagen 3 first
+    try:
+        model = ImageGenerationModel.from_pretrained("imagen-3.0-generate-001")
+        images = model.generate_images(prompt=prompt+", photorealistic, 4k, no text", number_of_images=1, aspect_ratio="4:3", person_generation="allow_adult")
+        return images[0]
+    except:
+        # Fallback to Imagen 2
+        try:
+            model = ImageGenerationModel.from_pretrained("imagegeneration@006")
+            images = model.generate_images(prompt=prompt, number_of_images=1, aspect_ratio="4:3", person_generation="allow_adult")
+            return images[0]
+        except: return None
+
 # --- MAIN UI ---
 
-st.title("🏥 GBP Post Factory")
+st.title("🏥 SEO Post Factory")
 st.markdown("Generate **Entity-Optimized Content**.")
 st.divider()
 
@@ -139,22 +152,33 @@ with col1:
             
             # 2. Text
             st.write("🧠 Writing content...")
+            
+            # INITIALIZE VARIABLES SAFELY (Fixes NameError)
+            headline = "Error Generating Headline"
+            body = "Error Generating Body"
+            img_prompt = ""
+            
             try:
                 raw_output = generate_post_content(site_text, focus_input, keyword_input, selected_model_name, temperature)
+                # Parse
                 headline = raw_output.split("HEADLINE:")[1].split("BODY:")[0].strip()
                 body = raw_output.split("BODY:")[1].split("IMAGE_PROMPT:")[0].strip()
                 img_prompt = raw_output.split("IMAGE_PROMPT:")[1].strip()
-            except: 
-                headline = "Error Parsing"; body = raw_output; img_prompt = "Error"
+            except Exception as e:
+                st.error(f"Text Generation/Parsing Error: {e}")
+                # We do NOT stop here, so we can see what happened
 
             # 3. Image
-            st.write("📸 Generating image...")
-            generated_image = generate_image(img_prompt)
-            
+            generated_image = None
+            if img_prompt and img_prompt != "Error":
+                st.write("📸 Generating image...")
+                generated_image = generate_image(img_prompt)
+            else:
+                st.warning("Skipping Image Gen (No Prompt detected)")
+
             # 4. Process Image for Display
             local_img_name = "temp_image.jpg"
             if generated_image:
-                # We still save to a local temp file because Vertex SDK requires it
                 generated_image.save(local_img_name, include_generation_parameters=False)
             
             status.update(label="Complete!", state="complete", expanded=False)
@@ -167,16 +191,15 @@ with col1:
                 if generated_image: 
                     st.image(local_img_name, caption="Generated by Imagen")
                     
-                    # Create Download Button
                     with open(local_img_name, "rb") as f:
-                        btn = st.download_button(
+                        st.download_button(
                             label="⬇️ Download Image",
                             data=f,
                             file_name="post_image.jpg",
                             mime="image/jpeg"
                         )
-                else:
-                    st.warning("Image Blocked (Safety Filter)")
+                elif img_prompt:
+                    st.warning("Image Blocked (Safety Filter) or Generation Failed")
 
                 st.divider()
                 st.text_input("Headline", value=headline)
