@@ -6,6 +6,7 @@ from google.oauth2 import service_account
 import requests
 from bs4 import BeautifulSoup
 import io
+from PIL import Image
 
 # --- PAGE CONFIGURATION ---
 st.set_page_config(page_title="Agency Post Factory", page_icon="🏥", layout="wide")
@@ -28,14 +29,11 @@ with st.sidebar:
     
     if "gcp_service_account" in st.secrets:
         try:
-            # Load Creds (Only Cloud Platform scope needed)
             creds = service_account.Credentials.from_service_account_info(
                 st.secrets["gcp_service_account"],
                 scopes=["https://www.googleapis.com/auth/cloud-platform"]
             )
             project_id = st.secrets["gcp_service_account"]["project_id"]
-            
-            # Initialize Vertex
             vertexai.init(project=project_id, location="us-central1", credentials=creds)
             auth_ready = True
             st.success(f"✅ AI System Online")
@@ -56,13 +54,8 @@ with st.sidebar:
         temperature = st.slider("Creativity", 0.0, 1.0, 0.2)
         
         st.divider()
-        st.info("""
-        **GBP Post Checklist:**
-        1. **Safe Image?** (No people/kids)
-        2. **Accurate?** (Is it a Dental chair or Medical table?)
-        3. **No Fluff?** (No "Unleash/Elevate")
-        4. **SEO?** (Keyword included)
-        """)
+        st.subheader("📸 Real Photo Override")
+        uploaded_file = st.file_uploader("Upload Client Photo", type=['jpg', 'png', 'jpeg'], help="If you upload a photo here, the AI Image Generator will be skipped.")
 
 # --- FUNCTIONS ---
 
@@ -88,7 +81,7 @@ def generate_post_content(text, focus_input, keyword, model_name, temp, post_typ
     # 2. POST TYPE LOGIC
     task_instruction = f"Write a post highlighting the benefits of the service found in CONTEXT. Focus on: {focus_input}."
     if post_type == "Review Spotlight":
-        task_instruction = f"The 'FOCUS INPUT' provided is a patient review (or topic). Write a 'Thank You' post appreciating the feedback. Do not invent a name if not provided."
+        task_instruction = f"The 'FOCUS INPUT' provided is a patient review (or topic). Write a 'Thank You' post appreciating the feedback."
     elif post_type == "FAQ / Education":
         task_instruction = f"Write a 'Did You Know?' or 'FAQ' post based on the CONTEXT. Answer a common patient question related to: {focus_input}."
 
@@ -112,9 +105,10 @@ def generate_post_content(text, focus_input, keyword, model_name, temp, post_typ
     *** IMAGE VISUAL RULES (CRITICAL) ***: 
     1. **Safety:** If topic involves CHILDREN/PATIENTS, prompt for a ROOM/OBJECT photo (No People).
     2. **Accuracy:** Look at the medical specialty in the CONTEXT. 
-       - If OB/GYN or General Doctor: Specify "Standard Medical Examination Table with paper roll". **Explicitly state: "NOT a dental chair".**
+       - If OB/GYN or General Doctor: Specify "FLAT Medical Examination Table with paper roll". **DO NOT GENERATE A CHAIR.**
        - If Dentist: Specify "Dental chair".
        - If Therapy: Specify "Comfortable couch, soft lighting, rug".
+       - If in doubt: Specify "A modern, tidy medical consultation desk with computer".
 
     OUTPUT FORMAT:
     HEADLINE: [Header]
@@ -144,7 +138,7 @@ def generate_image(prompt):
 
 # --- MAIN UI ---
 
-st.title("🏥 GBP Post Factory")
+st.title("🏥 SEO Post Factory")
 st.markdown("Generate **Entity-Optimized Content**.")
 st.divider()
 
@@ -152,8 +146,6 @@ col1, col2 = st.columns([1, 1], gap="large")
 
 with col1:
     st.subheader("1. Strategy")
-    
-    # NEW: Selectors for Strategy
     c1, c2 = st.columns(2)
     with c1:
         post_type = st.selectbox("Post Type", ["Service Highlight", "Review Spotlight", "FAQ / Education"])
@@ -167,14 +159,20 @@ with col1:
     with sub_col1: 
         keyword_input = st.text_input("Target Keyword", placeholder="e.g. Dentist 78704")
     with sub_col2: 
-        # Dynamic Label based on Post Type
         focus_label = "Focus / Offer"
         if post_type == "Review Spotlight": focus_label = "Paste Review Text Here"
         elif post_type == "FAQ / Education": focus_label = "Question to Answer"
         focus_input = st.text_input(focus_label, placeholder="e.g. Summer Special OR Review text")
     
     st.write("") 
-    run_btn = st.button("✨ Generate Post", type="primary")
+    
+    # Conditional Button Label
+    btn_label = "✨ Generate Post"
+    if uploaded_file:
+        btn_label = "✨ Generate Text (Using Uploaded Photo)"
+        st.success(f"📸 Image Uploaded: {uploaded_file.name}. AI Image Gen will be skipped.")
+        
+    run_btn = st.button(btn_label, type="primary")
 
     if run_btn:
         if not auth_ready: st.error("Check Sidebar Auth"); st.stop()
@@ -188,35 +186,33 @@ with col1:
             
             # 2. Text
             st.write("🧠 Writing content...")
-            
-            # INITIALIZE VARIABLES SAFELY
-            headline = "Error Generating Headline"
-            body = "Error Generating Body"
-            img_prompt = ""
+            headline = "Error"; body = "Error"; img_prompt = ""
             
             try:
-                # Updated Function Call
                 raw_output = generate_post_content(
                     site_text, focus_input, keyword_input, 
                     selected_model_name, temperature, 
                     post_type, vibe
                 )
-                # Parse
                 headline = raw_output.split("HEADLINE:")[1].split("BODY:")[0].strip()
                 body = raw_output.split("BODY:")[1].split("IMAGE_PROMPT:")[0].strip()
                 img_prompt = raw_output.split("IMAGE_PROMPT:")[1].strip()
             except Exception as e:
-                st.error(f"Text Generation Error: {e}")
+                st.error(f"Text Gen Error: {e}")
 
-            # 3. Image
+            # 3. Image Logic (Skip if Uploaded)
             generated_image = None
-            if img_prompt and img_prompt != "Error":
-                st.write("📸 Generating image...")
-                generated_image = generate_image(img_prompt)
+            if uploaded_file:
+                st.write("📂 Processing uploaded image...")
+                # We don't need to do anything, just display it later
             else:
-                st.warning("Skipping Image Gen (No Prompt detected)")
+                if img_prompt and img_prompt != "Error":
+                    st.write("📸 Generating image...")
+                    generated_image = generate_image(img_prompt)
+                else:
+                    st.warning("Skipping Image Gen (No Prompt detected)")
 
-            # 4. Save Temp
+            # 4. Save Temp (For AI Gen only)
             local_img_name = "temp_image.jpg"
             if generated_image:
                 generated_image.save(local_img_name, include_generation_parameters=False)
@@ -227,21 +223,24 @@ with col1:
             with col2:
                 st.subheader("3. Final Result")
                 
-                # Show Image
-                if generated_image: 
+                # CASE A: USER UPLOADED PHOTO
+                if uploaded_file:
+                    st.image(uploaded_file, caption="User Uploaded Photo")
+                    # No download button needed (user already has it), but we could add one if they want to re-download
+                
+                # CASE B: AI GENERATED PHOTO
+                elif generated_image: 
                     st.image(local_img_name, caption="Generated by Imagen")
-                    
                     with open(local_img_name, "rb") as f:
-                        st.download_button(
-                            label="⬇️ Download Image",
-                            data=f,
-                            file_name="post_image.jpg",
-                            mime="image/jpeg"
-                        )
-                elif img_prompt:
+                        st.download_button("⬇️ Download Image", f, "post_image.jpg", "image/jpeg")
+                
+                # CASE C: FAILED / BLOCKED
+                elif not uploaded_file and not generated_image:
                     st.warning("Image Blocked (Safety Filter) or Generation Failed")
 
                 st.divider()
                 st.text_input("Headline", value=headline)
                 st.text_area("Body", value=body, height=150)
-                st.caption(f"Prompt Used: {img_prompt}")
+                
+                if not uploaded_file:
+                    st.caption(f"Prompt Used: {img_prompt}")
