@@ -9,6 +9,7 @@ import requests
 from bs4 import BeautifulSoup
 import io
 import datetime
+import re # NEW: For extracting ID from URL
 
 # --- PAGE CONFIGURATION ---
 st.set_page_config(page_title="Agency Post Factory", page_icon="🏥", layout="wide")
@@ -33,7 +34,6 @@ with st.sidebar:
     
     if "gcp_service_account" in st.secrets:
         try:
-            # Load Creds with Drive Scope
             creds = service_account.Credentials.from_service_account_info(
                 st.secrets["gcp_service_account"],
                 scopes=["https://www.googleapis.com/auth/cloud-platform", "https://www.googleapis.com/auth/drive"]
@@ -49,36 +49,34 @@ with st.sidebar:
     else:
         st.warning("⚠️ No Secrets found.")
 
-    # 2. FOLDER PERMISSIONS
+    # 2. PERMISSIONS
     if auth_ready:
         st.divider()
         st.subheader("📂 Folder Permissions")
-        st.info("You must 'Share' your Google Drive folder with this email address:")
+        st.info("Share your Drive Folder with:")
         st.code(robot_email, language=None)
 
-    # 3. AI SETTINGS
+    # 3. SETTINGS
     st.divider()
-    st.subheader("🧠 Model Settings")
-    selected_model_name = st.selectbox(
-        "Text Model", 
-        ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-1.5-flash-001"], 
-        index=0
-    )
+    selected_model_name = st.selectbox("Text Model", ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-1.5-flash-001"], index=0)
     temperature = st.slider("Creativity", 0.0, 1.0, 0.2)
-
-    # 4. VA CHECKLIST (RESTORED)
-    st.divider()
-    st.subheader("✅ Post Checklist")
-    st.info("""
-    **Before saving, check these 4 things:**
     
-    1. **Image Safety:** If the client treats kids, ensure the image is a Room or Object (no people).
-    2. **Realism:** Does the image look like a real photo? No gibberish text?
-    3. **Tone:** Did it say "Unleash" or "Elevate"? If so, re-run it.
-    4. **SEO:** Is the Target Keyword included?
-    """)
+    st.divider()
+    st.info("VA Checklist: \n1. Safe Image? \n2. No Fluff? \n3. Keyword included?")
 
 # --- FUNCTIONS ---
+
+def extract_folder_id(input_string):
+    """Extracts ID from a full URL or returns the ID if pasted directly."""
+    if not input_string: return None
+    
+    # Logic: Look for the part after /folders/
+    match = re.search(r'folders/([a-zA-Z0-9_-]+)', input_string)
+    if match:
+        return match.group(1)
+    
+    # If no URL pattern found, assume the user pasted the ID directly
+    return input_string.strip()
 
 def get_website_text(url):
     try:
@@ -92,14 +90,11 @@ def get_website_text(url):
 def generate_post_content(text, focus_topic, keyword, model_name, temp):
     model = GenerativeModel(model_name)
     keyword_instruction = f"MANDATORY: Include '{keyword}'." if keyword else ""
-    
     prompt = f"""
     You are a Front Desk Receptionist. Write a Google Business Profile update.
     CONTEXT: {text} | FOCUS: {focus_topic} | KEYWORD: {keyword}
     GUIDELINES: No fluff ("Unleash", "Elevate"). Grade 8 English. Factual. {keyword_instruction}
-    
-    *** IMAGE SAFETY ***: If topic involves CHILDREN/PATIENTS, prompt for a ROOM/OBJECT photo. NO PEOPLE.
-
+    IMAGE SAFETY: If topic involves CHILDREN/PATIENTS, prompt for a ROOM/OBJECT photo. NO PEOPLE.
     OUTPUT FORMAT:
     HEADLINE: [Header]
     BODY: [Body]
@@ -109,13 +104,11 @@ def generate_post_content(text, focus_topic, keyword, model_name, temp):
     return response.text
 
 def generate_image(prompt):
-    # Try Imagen 3 first
     try:
         model = ImageGenerationModel.from_pretrained("imagen-3.0-generate-001")
         images = model.generate_images(prompt=prompt+", photorealistic, 4k, no text", number_of_images=1, aspect_ratio="4:3", person_generation="allow_adult")
         return images[0]
     except:
-        # Fallback to Imagen 2 if 3 fails
         try:
             model = ImageGenerationModel.from_pretrained("imagegeneration@006")
             images = model.generate_images(prompt=prompt, number_of_images=1, aspect_ratio="4:3", person_generation="allow_adult")
@@ -123,19 +116,13 @@ def generate_image(prompt):
         except: return None
 
 def upload_to_drive(creds, folder_id, filename, file_path, mime_type):
-    """Uploads with Shared Drive Support and Error Reporting."""
     try:
         service = build('drive', 'v3', credentials=creds)
         file_metadata = {'name': filename, 'parents': [folder_id]}
         media = MediaFileUpload(file_path, mimetype=mime_type)
-        
         file = service.files().create(
-            body=file_metadata, 
-            media_body=media, 
-            fields='id, webViewLink',
-            supportsAllDrives=True 
+            body=file_metadata, media_body=media, fields='id, webViewLink', supportsAllDrives=True
         ).execute()
-        
         return {"success": True, "link": file.get('webViewLink')}
     except Exception as e:
         return {"success": False, "error": str(e)}
@@ -150,25 +137,30 @@ col1, col2 = st.columns([1, 1], gap="large")
 
 with col1:
     st.subheader("1. Input Details")
-    url_input = st.text_input("Service Page URL", placeholder="https://client.com/service")
-    
+    url_input = st.text_input("Service Page URL")
     sub_col1, sub_col2 = st.columns(2)
-    with sub_col1: keyword_input = st.text_input("Target Keyword", placeholder="e.g. Dentist 78704")
-    with sub_col2: focus_input = st.text_input("Focus/Offer", placeholder="e.g. Summer Special")
+    with sub_col1: keyword_input = st.text_input("Keyword")
+    with sub_col2: focus_input = st.text_input("Focus/Offer")
     
     st.divider()
     
     st.subheader("2. Where to Save?")
-    folder_id_input = st.text_input(
-        "Google Drive Folder ID", 
-        placeholder="e.g. 1A2b3C4d...",
-        help="Copy the ID from the end of the Google Drive URL."
+    # UPDATED INPUT LABEL
+    folder_input_raw = st.text_input(
+        "Google Drive Folder URL (or ID)", 
+        placeholder="Paste the full link: https://drive.google.com/drive/folders/...",
+        help="You can paste the full URL from your browser bar."
     )
     
-    if not folder_id_input:
-        st.info("ℹ️ Leave blank to generate without saving to Drive.")
+    # CLEAN THE ID
+    folder_id_clean = extract_folder_id(folder_input_raw)
+    
+    if folder_id_clean:
+        st.caption(f"✅ Detected Folder ID: `{folder_id_clean}`")
+    else:
+        st.info("ℹ️ Leave blank to generate without saving.")
 
-    st.write("") # Spacer
+    st.write("") 
     run_btn = st.button("✨ Generate Post", type="primary")
 
     if run_btn:
@@ -177,9 +169,9 @@ with col1:
         
         with st.status("Agent is working...", expanded=True) as status:
             # 1. Scrape
-            st.write("🕷️ Reading website...")
+            st.write("🕷️ Reading site...")
             site_text = get_website_text(url_input)
-            if not site_text: st.error("Scrape failed. Check URL."); st.stop()
+            if not site_text: st.error("Scrape failed."); st.stop()
             
             # 2. Text
             st.write("🧠 Writing content...")
@@ -204,41 +196,34 @@ with col1:
             
             if generated_image:
                 generated_image.save(local_img_name, include_generation_parameters=False)
-                if folder_id_input:
+                if folder_id_clean:
                     st.write("☁️ Uploading Image...")
-                    img_result = upload_to_drive(creds, folder_id_input, f"{base_name}.jpg", local_img_name, "image/jpeg")
+                    img_result = upload_to_drive(creds, folder_id_clean, f"{base_name}.jpg", local_img_name, "image/jpeg")
 
-            if folder_id_input:
+            if folder_id_clean:
                 st.write("☁️ Uploading Text...")
                 text_content = f"HEADLINE: {headline}\n\nBODY: {body}\n\nPROMPT: {img_prompt}\n\nSOURCE: {url_input}"
                 with open("temp_text.txt", "w") as f: f.write(text_content)
-                doc_result = upload_to_drive(creds, folder_id_input, f"{base_name}.txt", "temp_text.txt", "text/plain")
+                doc_result = upload_to_drive(creds, folder_id_clean, f"{base_name}.txt", "temp_text.txt", "text/plain")
             
             status.update(label="Complete!", state="complete", expanded=False)
 
             # --- RESULT DISPLAY ---
             with col2:
                 st.subheader("3. Final Result")
-                
-                # Show Image
-                if generated_image: 
-                    st.image(local_img_name, caption="Generated by Imagen")
-                else:
-                    st.warning("Image Blocked (Safety Filter)")
+                if generated_image: st.image(local_img_name)
+                else: st.warning("Image Blocked (Safety Filter)")
 
-                # Show Links
-                if folder_id_input:
+                if folder_id_clean:
                     if img_result["success"] or doc_result["success"]:
                         st.success(f"✅ Saved to Drive!")
                         if img_result.get("link"): st.markdown(f"[📂 Open Image]({img_result['link']})")
                         if doc_result.get("link"): st.markdown(f"[📄 Open Text]({doc_result['link']})")
-                    
-                    # ERROR DISPLAY
                     if not img_result["success"] and generated_image:
                         st.error(f"Image Upload Failed: {img_result.get('error')}")
                     if not doc_result["success"]:
                         st.error(f"Text Upload Failed: {doc_result.get('error')}")
                 
                 st.divider()
-                st.text_input("Headline", value=headline)
-                st.text_area("Body", value=body, height=150)
+                st.text_input("Headline", headline)
+                st.text_area("Body", body)
