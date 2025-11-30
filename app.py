@@ -37,8 +37,7 @@ with st.sidebar:
             )
             project_id = st.secrets["gcp_service_account"]["project_id"]
             
-            # Initialize Vertex AI (Defaulting to us-central1)
-            # If you still get 404s, try changing this to "us-west1" or "us-east4"
+            # Initialize Vertex AI
             vertexai.init(
                 project=project_id, 
                 location="us-central1", 
@@ -57,33 +56,32 @@ with st.sidebar:
         st.divider()
         st.subheader("2. AI Model Selection")
         
-        # UPDATED: Matching your table EXACTLY
+        # Exact Model IDs from Google
         selected_model_name = st.selectbox(
             "Select Text Model",
             options=[
-                "gemini-2.5-flash",       # Exact match from your table
-                "gemini-2.5-pro",         # Exact match from your table
-                "gemini-2.0-flash-001",   # Exact match from your table
-                "gemini-1.5-flash-001",   # Fallback
+                "gemini-2.5-flash",       
+                "gemini-2.5-pro",         
+                "gemini-2.0-flash-001",   
+                "gemini-1.5-flash-001",   
             ],
             index=0,
             help="Select the Model ID exactly as it appears in Vertex AI."
         )
         
-        # Temperature Slider
         temperature = st.slider(
             "Creativity (Temperature)", 
             min_value=0.0, max_value=1.0, value=0.2, 
-            help="0.0 = Robot/Factual. 1.0 = Creative/Random. Keep low for SEO."
+            help="0.0 = Robot/Factual. 1.0 = Creative/Random."
         )
 
     # 3. VA CHECKLIST
     st.divider()
-    st.subheader("✅ Checklist")
+    st.subheader("✅ Post Checklist")
     st.info("""
-    1. **Image:** No text/logos? Realistic?
-    2. **Tone:** No "Unleash," "Elevate," or "Magic"?
-    3. **SEO:** Is the Keyword included naturally?
+    1. **Image Safety:** If the client treats kids, the AI will generate a room/object photo to avoid safety blocks.
+    2. **Tone:** Check for "Marketing Fluff."
+    3. **SEO:** Is the Keyword included?
     """)
 
 # --- HELPER FUNCTIONS ---
@@ -102,37 +100,37 @@ def get_website_text(url):
 def generate_post_content(text, focus_topic, keyword, model_name, temp):
     """Uses the SELECTED Gemini model to write the post."""
     
-    # Initialize the specific model selected in sidebar
     model = GenerativeModel(model_name)
     
-    # Keyword Logic
     keyword_instruction = ""
     if keyword:
         keyword_instruction = f"MANDATORY: You MUST include the exact phrase '{keyword}' naturally in the Headline or first sentence."
     
     prompt = f"""
     You are a helpful Front Desk Receptionist for a local medical/service business. 
-    You are NOT a marketing copywriter.
     
     CONTEXT SOURCE: {text}
     FOCUS TOPIC: {focus_topic}
     TARGET KEYWORD: {keyword if keyword else "Extract main entity from text"}
 
     ---
-    STRICT TONE GUIDELINES:
-    1. **Anti-Fluff:** Do NOT use words like: "Unleash," "Elevate," "Transform," "Revolutionary," "Game-changer," "Dive into," "Realm," or "Magic."
-    2. **Voice:** Direct, warm, and factual. Grade 8 English.
+    STRICT GUIDELINES:
+    1. **Anti-Fluff:** Do NOT use words like: "Unleash," "Elevate," "Transform," "Magic."
+    2. **Voice:** Direct, warm, factual. Grade 8 English.
     3. **Google NLP:** Focus on the specific Service Name and Location.
     4. {keyword_instruction}
+    
+    *** CRITICAL IMAGE SAFETY RULE ***: 
+    If this business involves CHILDREN (e.g. ABA Therapy, Pediatrics) or PATIENTS, **DO NOT** describe people in the IMAGE_PROMPT. 
+    Instead, describe a warm, professional SETTING or OBJECTS (e.g. "A sunlit therapy room with colorful toys on a rug," "A tidy front desk," "A clipboard and stethoscope").
     ---
 
     OUTPUT FORMAT:
     HEADLINE: [Direct, Keyword-Rich, under 10 words]
     BODY: [2-3 sentences max. Problem -> Solution -> Call to Action.]
-    IMAGE_PROMPT: [Photorealistic, candid, high-end photo. Describe lighting (e.g. 'soft daylight') and camera style (e.g. 'shot on 35mm'). Do NOT describe text, logos, or cartoons.]
+    IMAGE_PROMPT: [Photorealistic, candid, natural light, bokeh, 35mm lens. NO PEOPLE if the topic involves children. NO TEXT.]
     """
     
-    # Use the temperature from sidebar
     response = model.generate_content(
         prompt,
         generation_config={"temperature": temp}
@@ -140,20 +138,24 @@ def generate_post_content(text, focus_topic, keyword, model_name, temp):
     return response.text
 
 def generate_image(prompt):
-    """Uses Imagen 3."""
-    # Note: If this fails, try "imagegeneration@006"
-    model = ImageGenerationModel.from_pretrained("imagen-3.0-generate-001")
-    
-    full_prompt = f"{prompt}, photorealistic, 4k resolution, highly detailed, professional photography, natural lighting, bokeh, 35mm lens, no text, no watermarks"
-    
-    images = model.generate_images(
-        prompt=full_prompt,
-        number_of_images=1,
-        language="en",
-        aspect_ratio="4:3", 
-        person_generation="allow_adult",
-    )
-    return images[0]
+    """Uses Imagen 3 with error handling."""
+    try:
+        model = ImageGenerationModel.from_pretrained("imagen-3.0-generate-001")
+        
+        full_prompt = f"{prompt}, photorealistic, 4k resolution, professional photography, natural lighting, no text"
+        
+        images = model.generate_images(
+            prompt=full_prompt,
+            number_of_images=1,
+            language="en",
+            aspect_ratio="4:3", 
+            person_generation="allow_adult", # Still allows adults, but prompt will now avoid kids
+        )
+        return images[0]
+    except Exception as e:
+        # Return None instead of crashing if blocked
+        print(f"Image Gen Error: {e}")
+        return None
 
 # --- MAIN UI ---
 
@@ -189,7 +191,7 @@ with col1:
                 
                 if not site_text or len(site_text) < 50:
                     status.update(label="Error reading website!", state="error")
-                    st.error("Could not scrape text. Website might block bots. Try pasting text manually.")
+                    st.error("Could not scrape text. Try pasting text manually.")
                     st.stop()
                 
                 # Step 2: Gemini Writes
@@ -205,7 +207,6 @@ with col1:
                 except Exception as e:
                     status.update(label="Gemini Error", state="error")
                     st.error(f"Model Error: {e}")
-                    st.info("Troubleshooting: Try switching models in the sidebar, or check if your Google Cloud Project has 'Vertex AI' enabled in the 'us-central1' region.")
                     st.stop()
                 
                 # Step 3: Parse Logic
@@ -221,42 +222,38 @@ with col1:
                 
                 # Step 4: Imagen Creates
                 st.write("📸 Imagen 3 is taking the photo...")
-                try:
-                    generated_image = generate_image(img_prompt)
-                    
-                    # Convert to bytes
+                
+                generated_image = generate_image(img_prompt)
+                
+                if generated_image:
                     img_byte_arr = io.BytesIO()
                     generated_image.save(img_byte_arr, include_generation_parameters=False)
                     img_byte_arr.seek(0)
-                    
                     status.update(label="Complete!", state="complete", expanded=False)
-                    
-                except Exception as e:
-                    status.update(label="Image Generation Failed", state="error")
-                    st.error(f"Imagen Error: {e}")
-                    st.stop()
+                else:
+                    status.update(label="Image Generation Blocked", state="warning")
+                    st.warning("⚠️ Image blocked by Safety Filters. Displaying text only.")
+                    img_byte_arr = None
 
             # --- RESULT DISPLAY ---
             with col2:
                 st.subheader("2. Result")
                 
-                # Display Image
-                st.image(img_byte_arr, use_column_width=True, caption="Generated by Imagen 3")
-                
-                # Download Button for Image
-                st.download_button(
-                    label="⬇️ Download Image",
-                    data=img_byte_arr,
-                    file_name="gbp_post_image.jpg",
-                    mime="image/jpeg"
-                )
+                if img_byte_arr:
+                    st.image(img_byte_arr, use_column_width=True, caption="Generated by Imagen 3")
+                    st.download_button(
+                        label="⬇️ Download Image",
+                        data=img_byte_arr,
+                        file_name="gbp_post_image.jpg",
+                        mime="image/jpeg"
+                    )
+                else:
+                    st.info("No image generated. Try changing the focus to a non-human subject.")
                 
                 st.divider()
-                
-                # Display Text
                 st.text_input("Headline", value=headline)
                 st.text_area("Caption", value=body, height=150)
-                st.caption(f"**Model:** {selected_model_name} | **Prompt:** {img_prompt}")
+                st.caption(f"**Prompt:** {img_prompt}")
 
 with st.expander("ℹ️ How to use this tool"):
     st.markdown("""
