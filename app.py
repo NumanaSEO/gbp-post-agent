@@ -27,49 +27,63 @@ with st.sidebar:
     st.title("⚙️ Configuration")
     
     # 1. AUTHENTICATION
-    st.subheader("1. Authentication")
+    st.subheader("1. Google Cloud Auth")
     auth_ready = False
+    
     if "gcp_service_account" in st.secrets:
         try:
             creds = service_account.Credentials.from_service_account_info(
                 st.secrets["gcp_service_account"]
             )
             project_id = st.secrets["gcp_service_account"]["project_id"]
-            vertexai.init(project=project_id, location="us-central1", credentials=creds)
+            
+            # Initialize Vertex AI
+            vertexai.init(
+                project=project_id, 
+                location="us-central1", 
+                credentials=creds
+            )
             auth_ready = True
             st.success(f"Connected: {project_id}")
         except Exception as e:
             st.error(f"Secrets Error: {e}")
     else:
         st.warning("⚠️ No Secrets found.")
+        st.info("Paste TOML into App Settings > Secrets.")
 
-    # 2. AI MODEL CONFIG (NEW!)
+    # 2. AI MODEL CONFIG
     if auth_ready:
         st.divider()
-        st.subheader("2. AI Model Config")
+        st.subheader("2. AI Model Selection")
         
-        # The Picker - Matches your screenshot options
+        # The Model Picker
         selected_model_name = st.selectbox(
             "Select Text Model",
             options=[
-                "gemini-1.5-flash-001",   # The current Stable Workhorse
-                "gemini-2.0-flash-exp",   # The new Experimental Flash
-                "gemini-1.5-pro-001",     # Higher IQ, slower
+                "gemini-2.5-flash-001",   # Fast & Smart (Default)
+                "gemini-2.5-pro-001",     # High Reasoning
+                "gemini-1.5-flash-001",   # Stable Backup
+                "gemini-1.5-pro-001",     # Stable Pro Backup
+                "gemini-2.0-flash-exp",   # Experimental
             ],
-            index=0, # Defaults to 1.5 Flash (Safe bet)
-            help="If one model gives a 404 error, switch to another."
+            index=0,
+            help="If a model returns a 404/Error, switch to a different version."
         )
         
-        # Optional: Strictness Slider
-        temperature = st.slider("Creativity (Temperature)", 0.0, 1.0, 0.2, help="Lower = More Factual. Higher = More Creative.")
+        # Temperature Slider
+        temperature = st.slider(
+            "Creativity (Temperature)", 
+            min_value=0.0, max_value=1.0, value=0.2, 
+            help="0.0 = Robot/Factual. 1.0 = Creative/Random. Keep low for SEO."
+        )
 
     # 3. VA CHECKLIST
     st.divider()
+    st.subheader("✅ VA Checklist")
     st.info("""
-    **VA Checklist:**
     1. **Image:** No text/logos? Realistic?
-    2. **Tone:** No "Unleash" or "Elevate"?
-    3. **SEO:** Keyword included?
+    2. **Tone:** No "Unleash," "Elevate," or "Magic"?
+    3. **SEO:** Is the Keyword included naturally?
     """)
 
 # --- HELPER FUNCTIONS ---
@@ -88,15 +102,17 @@ def get_website_text(url):
 def generate_post_content(text, focus_topic, keyword, model_name, temp):
     """Uses the SELECTED Gemini model to write the post."""
     
-    # We now use the model_name passed from the sidebar picker
+    # Initialize the specific model selected in sidebar
     model = GenerativeModel(model_name)
     
+    # Keyword Logic
     keyword_instruction = ""
     if keyword:
         keyword_instruction = f"MANDATORY: You MUST include the exact phrase '{keyword}' naturally in the Headline or first sentence."
     
     prompt = f"""
     You are a helpful Front Desk Receptionist for a local medical/service business. 
+    You are NOT a marketing copywriter.
     
     CONTEXT SOURCE: {text}
     FOCUS TOPIC: {focus_topic}
@@ -104,8 +120,8 @@ def generate_post_content(text, focus_topic, keyword, model_name, temp):
 
     ---
     STRICT TONE GUIDELINES:
-    1. **Anti-Fluff:** No words like: "Unleash," "Elevate," "Transform," "Revolutionary," "Magic."
-    2. **Voice:** Direct, warm, factual. Grade 8 English.
+    1. **Anti-Fluff:** Do NOT use words like: "Unleash," "Elevate," "Transform," "Revolutionary," "Game-changer," "Dive into," "Realm," or "Magic."
+    2. **Voice:** Direct, warm, and factual. Grade 8 English.
     3. **Google NLP:** Focus on the specific Service Name and Location.
     4. {keyword_instruction}
     ---
@@ -113,10 +129,10 @@ def generate_post_content(text, focus_topic, keyword, model_name, temp):
     OUTPUT FORMAT:
     HEADLINE: [Direct, Keyword-Rich, under 10 words]
     BODY: [2-3 sentences max. Problem -> Solution -> Call to Action.]
-    IMAGE_PROMPT: [Photorealistic, candid, high-end photo. Describe lighting and camera style. NO TEXT/LOGOS.]
+    IMAGE_PROMPT: [Photorealistic, candid, high-end photo. Describe lighting (e.g. 'soft daylight') and camera style (e.g. 'shot on 35mm'). Do NOT describe text, logos, or cartoons.]
     """
     
-    # Use the temperature from the sidebar slider
+    # Use the temperature from sidebar
     response = model.generate_content(
         prompt,
         generation_config={"temperature": temp}
@@ -126,7 +142,8 @@ def generate_post_content(text, focus_topic, keyword, model_name, temp):
 def generate_image(prompt):
     """Uses Imagen 3."""
     model = ImageGenerationModel.from_pretrained("imagen-3.0-generate-001")
-    full_prompt = f"{prompt}, photorealistic, 4k, professional photography, natural lighting, bokeh, 35mm lens, no text"
+    
+    full_prompt = f"{prompt}, photorealistic, 4k resolution, highly detailed, professional photography, natural lighting, bokeh, 35mm lens, no text, no watermarks"
     
     images = model.generate_images(
         prompt=full_prompt,
@@ -171,39 +188,49 @@ with col1:
                 
                 if not site_text or len(site_text) < 50:
                     status.update(label="Error reading website!", state="error")
-                    st.error("Could not scrape text. Try pasting text manually.")
+                    st.error("Could not scrape text. Website might block bots. Try pasting text manually.")
                     st.stop()
                 
                 # Step 2: Gemini Writes (Using Selected Model)
                 st.write(f"🧠 {selected_model_name} is optimizing content...")
                 try:
-                    # PASS THE MODEL NAME AND TEMP HERE
-                    raw_output = generate_post_content(site_text, focus_input, keyword_input, selected_model_name, temperature)
+                    # Passing all the new arguments
+                    raw_output = generate_post_content(
+                        site_text, 
+                        focus_input, 
+                        keyword_input, 
+                        selected_model_name, 
+                        temperature
+                    )
                 except Exception as e:
                     status.update(label="Gemini Error", state="error")
                     st.error(f"Error with model {selected_model_name}: {e}")
                     st.info("Try selecting a different model in the Sidebar!")
                     st.stop()
                 
-                # Step 3: Parse
+                # Step 3: Parse Logic
                 try:
                     headline = raw_output.split("HEADLINE:")[1].split("BODY:")[0].strip()
                     body_part = raw_output.split("BODY:")[1]
                     body = body_part.split("IMAGE_PROMPT:")[0].strip()
                     img_prompt = raw_output.split("IMAGE_PROMPT:")[1].strip()
                 except Exception as e:
-                    headline = "Error Parsing Headline"
+                    headline = "Error Parsing Output"
                     body = raw_output
                     img_prompt = f"Professional photo representing {focus_input}"
                 
-                # Step 4: Imagen
+                # Step 4: Imagen Creates
                 st.write("📸 Imagen 3 is taking the photo...")
                 try:
                     generated_image = generate_image(img_prompt)
+                    
+                    # Convert to bytes
                     img_byte_arr = io.BytesIO()
                     generated_image.save(img_byte_arr, include_generation_parameters=False)
                     img_byte_arr.seek(0)
+                    
                     status.update(label="Complete!", state="complete", expanded=False)
+                    
                 except Exception as e:
                     status.update(label="Image Generation Failed", state="error")
                     st.error(f"Imagen Error: {e}")
@@ -212,16 +239,11 @@ with col1:
             # --- RESULT DISPLAY ---
             with col2:
                 st.subheader("2. Result")
+                
+                # Display Image
                 st.image(img_byte_arr, use_column_width=True, caption="Generated by Imagen 3")
                 
+                # Download Button for Image
                 st.download_button(
                     label="⬇️ Download Image",
-                    data=img_byte_arr,
-                    file_name="gbp_post_image.jpg",
-                    mime="image/jpeg"
-                )
-                
-                st.divider()
-                st.text_input("Headline", value=headline)
-                st.text_area("Caption", value=body, height=150)
-                st.caption(f"**Model Used:** {selected_model_name} | **Prompt:** {img_prompt}")
+                    data=img_byte_ar
