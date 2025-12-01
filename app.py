@@ -28,14 +28,11 @@ with st.sidebar:
     
     if "gcp_service_account" in st.secrets:
         try:
-            # Load Creds (Only Cloud Platform scope needed)
             creds = service_account.Credentials.from_service_account_info(
                 st.secrets["gcp_service_account"],
                 scopes=["https://www.googleapis.com/auth/cloud-platform"]
             )
             project_id = st.secrets["gcp_service_account"]["project_id"]
-            
-            # Initialize Vertex
             vertexai.init(project=project_id, location="us-central1", credentials=creds)
             auth_ready = True
             st.success(f"✅ AI System Online")
@@ -59,7 +56,7 @@ with st.sidebar:
         st.subheader("📸 Real Photo Override")
         uploaded_file = st.file_uploader("Upload Client Photo", type=['jpg', 'png', 'jpeg'], help="If you upload a photo here, the AI Image Generator will be skipped.")
 
-        # 3. GBP Post CHECKLIST (RESTORED)
+        # 3. VA CHECKLIST
         st.divider()
         st.info("""
         **GBP Post Quality Checklist:**
@@ -92,11 +89,10 @@ def generate_post_content(text, focus_input, keyword, model_name, temp, post_typ
 
     # 2. POST TYPE LOGIC
     task_instruction = f"Write a post highlighting the benefits of the service found in CONTEXT. Focus on: {focus_input}."
-    visual_override = "" # Default: No override
+    visual_override = "" 
     
     if post_type == "Review Spotlight":
-        task_instruction = f"The 'FOCUS INPUT' provided is a patient review. Write a 'Thank You' post. Do not invent a name."
-        # OVERRIDE: Reviews should look like hospitality, not clinical procedures
+        task_instruction = f"The 'FOCUS INPUT' provided is a patient review (or topic). Write a 'Thank You' post appreciating the feedback."
         visual_override = "FOR THIS REVIEW POST: Do NOT show medical equipment. Prompt for a 'Warm, inviting medical reception area with fresh flowers' OR 'A comfortable consultation corner with armchairs'."
         
     elif post_type == "FAQ / Education":
@@ -123,7 +119,7 @@ def generate_post_content(text, focus_input, keyword, model_name, temp, post_typ
     1. **Safety:** If topic involves CHILDREN/PATIENTS, prompt for a ROOM/OBJECT photo (No People).
     2. {visual_override} 
     3. **Accuracy (If showing clinical room):** 
-       - If OB/GYN or General Doctor: Specify "A flat hospital bed with white paper roll". Use the word "BED" or "GURNEY" to ensure it is flat. **Explicitly state: "NOT a dental chair".**
+       - If OB/GYN or General Doctor: Specify "A flat hospital bed with white paper roll". Use the word "BED" or "GURNEY". **Explicitly state: "NOT a dental chair".**
        - If Dentist: Specify "Dental chair".
        - If Therapy: Specify "Comfortable couch, soft lighting, rug".
 
@@ -135,6 +131,19 @@ def generate_post_content(text, focus_input, keyword, model_name, temp, post_typ
     
     response = model.generate_content(prompt, generation_config={"temperature": temp})
     return response.text
+
+def generate_image(prompt):
+    if not prompt or prompt == "Error": return None
+    try:
+        model = ImageGenerationModel.from_pretrained("imagen-3.0-generate-001")
+        images = model.generate_images(prompt=prompt+", photorealistic, 4k, no text", number_of_images=1, aspect_ratio="4:3", person_generation="allow_adult")
+        return images[0]
+    except:
+        try:
+            model = ImageGenerationModel.from_pretrained("imagegeneration@006")
+            images = model.generate_images(prompt=prompt, number_of_images=1, aspect_ratio="4:3", person_generation="allow_adult")
+            return images[0]
+        except: return None
 
 # --- MAIN UI ---
 
@@ -175,6 +184,13 @@ with col1:
     run_btn = st.button(btn_label, type="primary")
 
     if run_btn:
+        # --- SAFETY INITIALIZATION (Fixes NameError) ---
+        headline = "Error"
+        body = "Error"
+        img_prompt = ""
+        generated_image = None
+        # -----------------------------------------------
+
         if not auth_ready: st.error("Check Sidebar Auth"); st.stop()
         if not url_input: st.warning("Please enter a URL"); st.stop()
         
@@ -186,7 +202,6 @@ with col1:
             
             # 2. Text
             st.write("🧠 Writing content...")
-            headline = "Error"; body = "Error"; img_prompt = ""
             
             try:
                 raw_output = generate_post_content(
@@ -194,17 +209,17 @@ with col1:
                     selected_model_name, temperature, 
                     post_type, vibe
                 )
+                # Parse
                 headline = raw_output.split("HEADLINE:")[1].split("BODY:")[0].strip()
                 body = raw_output.split("BODY:")[1].split("IMAGE_PROMPT:")[0].strip()
                 img_prompt = raw_output.split("IMAGE_PROMPT:")[1].strip()
             except Exception as e:
                 st.error(f"Text Gen Error: {e}")
+                # Don't stop, so we can debug what happened
 
             # 3. Image Logic (Skip if Uploaded)
-            generated_image = None
             if uploaded_file:
                 st.write("📂 Processing uploaded image...")
-                # We don't need to do anything, just display it later
             else:
                 if img_prompt and img_prompt != "Error":
                     st.write("📸 Generating image...")
@@ -234,7 +249,7 @@ with col1:
                         st.download_button("⬇️ Download Image", f, "post_image.jpg", "image/jpeg")
                 
                 # CASE C: FAILED / BLOCKED
-                elif not uploaded_file and not generated_image:
+                elif not uploaded_file:
                     st.warning("Image Blocked (Safety Filter) or Generation Failed")
 
                 st.divider()
