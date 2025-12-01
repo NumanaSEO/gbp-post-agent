@@ -41,24 +41,19 @@ with st.sidebar:
         selected_model = st.selectbox("Text Model", ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-1.5-flash-001"])
         temp = st.slider("Creativity", 0.0, 1.0, 0.2)
         
-        # --- RESTORED CHECKLIST ---
         st.divider()
         st.info("""
-        **Quality Checklist:**
+        **✅ Quality Checklist:**
         
         1. **Visuals:**
-           - *Service (Office):* Is the room empty/clean?
-           - *Service (Lifestyle):* Is it a nice headshot (no weird hands)?
-           - *Review/FAQ:* Use a **Template** from Drive.
+           - *Lifestyle:* Is the person fully healed & happy? (No bandages).
+           - *Office:* Is it clean/empty?
            
         2. **Accuracy:**
-           - Did it make a Dental Chair for a Medical Doctor? (Bad!)
+           - Did it create a Dental Chair for a Medical Doctor? (Bad).
            
         3. **Tone:**
-           - Did it say "Unleash" or "Elevate"? (Re-run it).
-           
-        4. **SEO:**
-           - Is the Keyword included?
+           - Did it say "Unleash"? (Re-run it).
         """)
 
 # --- FUNCTIONS ---
@@ -84,23 +79,25 @@ def generate_copy(text, focus, keyword, model_name, temp, post_type, vibe, visua
     elif post_type == "FAQ":
         task = f"Answer a common patient question about: {focus}."
 
-    # VISUAL LOGIC
-    if visual_style == "Lifestyle / People":
+    # --- STRICT VISUAL LOGIC ---
+    if visual_style == "Lifestyle / People (Headshots)":
         visual_instruction = """
-        Describe a 'Lifestyle Portrait' of a happy, healthy adult (30s-40s). 
-        - HEADSHOT ONLY (Head and shoulders).
-        - Looking at camera, smiling confidently.
-        - Soft, blurred outdoor or neutral background (Bokeh).
-        - High-end commercial photography style.
-        - NO medical equipment. NO doctors. Just a happy person.
+        Describe a 'High-End Commercial Beauty Portrait'.
+        - SUBJECT: A confident, attractive adult (30s-50s).
+        - EXPRESSION: Smiling, relaxed, looking confident.
+        - BACKGROUND: Neutral Studio Grey, Bright Living Room, or Soft Outdoor Blur. (Keep it simple).
+        - **SAFETY OVERRIDE:** The person must look 100% HEALED and HEALTHY. 
+          - DO NOT show bandages, doctors, hospitals, or medical tools.
+          - DO NOT try to show 'Before/After' features. Just show a beautiful person.
+        - STYLE: Magazine photography, soft lighting, 85mm lens.
         """
     else:
         visual_instruction = """
         Describe a 'Modern Medical Interior'.
-        - If Plastic Surgery: "Luxury consultation desk, marble, orchids." (NO TOOLS).
+        - If Plastic Surgery: "A high-end, marble consultation desk with a modern computer and a white orchid. Soft depth of field."
         - If OB/GYN: "Clean, comfortable medical room, soft lighting." (NO DENTAL CHAIRS).
         - General: "Sunlit reception area with plants."
-        - NO PEOPLE.
+        - **NEGATIVE CONSTRAINT:** NO PEOPLE.
         """
 
     prompt = f"""
@@ -134,7 +131,7 @@ def generate_ai_image(prompt):
     except: return None
 
 # --- MAIN UI ---
-st.title("✍️ GBP Post Generator")
+st.title("✍️ Agency SEO Writer")
 col1, col2 = st.columns([1, 1], gap="large")
 
 with col1:
@@ -143,7 +140,6 @@ with col1:
     with c1: post_type = st.selectbox("Post Type", ["Service Highlight", "Review Spotlight", "FAQ"])
     with c2: vibe = st.selectbox("Brand Vibe", ["Friendly", "Luxury", "Urgent"])
     
-    # Visual Style Selector
     visual_style = st.radio("Image Style", ["Office / Atmosphere (Safe)", "Lifestyle / People (Headshots)"], horizontal=True)
 
     st.subheader("2. Inputs")
@@ -172,7 +168,6 @@ with col1:
             except: headline="Error"; body="Error"; img_prompt="SKIP"
 
             generated_image = None
-            # Only generate image for Service Highlights
             if post_type == "Service Highlight":
                 st.write("📸 Generating AI Photo...")
                 generated_image = generate_ai_image(img_prompt)
