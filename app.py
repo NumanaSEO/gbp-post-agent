@@ -92,8 +92,13 @@ def generate_post_content(text, focus_input, keyword, model_name, temp, post_typ
 
     # 2. POST TYPE LOGIC
     task_instruction = f"Write a post highlighting the benefits of the service found in CONTEXT. Focus on: {focus_input}."
+    visual_override = "" # Default: No override
+    
     if post_type == "Review Spotlight":
-        task_instruction = f"The 'FOCUS INPUT' provided is a patient review (or topic). Write a 'Thank You' post appreciating the feedback."
+        task_instruction = f"The 'FOCUS INPUT' provided is a patient review. Write a 'Thank You' post. Do not invent a name."
+        # OVERRIDE: Reviews should look like hospitality, not clinical procedures
+        visual_override = "FOR THIS REVIEW POST: Do NOT show medical equipment. Prompt for a 'Warm, inviting medical reception area with fresh flowers' OR 'A comfortable consultation corner with armchairs'."
+        
     elif post_type == "FAQ / Education":
         task_instruction = f"Write a 'Did You Know?' or 'FAQ' post based on the CONTEXT. Answer a common patient question related to: {focus_input}."
 
@@ -116,11 +121,11 @@ def generate_post_content(text, focus_input, keyword, model_name, temp, post_typ
     
     *** IMAGE VISUAL RULES (CRITICAL) ***: 
     1. **Safety:** If topic involves CHILDREN/PATIENTS, prompt for a ROOM/OBJECT photo (No People).
-    2. **Accuracy:** Look at the medical specialty in the CONTEXT. 
-       - If OB/GYN or General Doctor: Specify "FLAT Medical Examination Table with paper roll". **DO NOT GENERATE A CHAIR.**
+    2. {visual_override} 
+    3. **Accuracy (If showing clinical room):** 
+       - If OB/GYN or General Doctor: Specify "A flat hospital bed with white paper roll". Use the word "BED" or "GURNEY" to ensure it is flat. **Explicitly state: "NOT a dental chair".**
        - If Dentist: Specify "Dental chair".
        - If Therapy: Specify "Comfortable couch, soft lighting, rug".
-       - If in doubt: Specify "A modern, tidy medical consultation desk with computer".
 
     OUTPUT FORMAT:
     HEADLINE: [Header]
@@ -130,23 +135,6 @@ def generate_post_content(text, focus_input, keyword, model_name, temp, post_typ
     
     response = model.generate_content(prompt, generation_config={"temperature": temp})
     return response.text
-
-def generate_image(prompt):
-    # Skip if prompt is empty/error
-    if not prompt or prompt == "Error": return None
-
-    # Try Imagen 3 first
-    try:
-        model = ImageGenerationModel.from_pretrained("imagen-3.0-generate-001")
-        images = model.generate_images(prompt=prompt+", photorealistic, 4k, no text", number_of_images=1, aspect_ratio="4:3", person_generation="allow_adult")
-        return images[0]
-    except:
-        # Fallback to Imagen 2
-        try:
-            model = ImageGenerationModel.from_pretrained("imagegeneration@006")
-            images = model.generate_images(prompt=prompt, number_of_images=1, aspect_ratio="4:3", person_generation="allow_adult")
-            return images[0]
-        except: return None
 
 # --- MAIN UI ---
 
