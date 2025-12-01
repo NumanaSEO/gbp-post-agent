@@ -20,7 +20,7 @@ st.markdown("""
 
 # --- SIDEBAR: CONFIG ---
 with st.sidebar:
-    st.title("⚙️ Configuration")
+    st.title("⚙️ Config")
     
     # AUTH CHECK
     auth_ready = False
@@ -30,40 +30,38 @@ with st.sidebar:
                 st.secrets["gcp_service_account"],
                 scopes=["https://www.googleapis.com/auth/cloud-platform"]
             )
-            # Initialize Vertex (Defaulting to us-central1)
             vertexai.init(project=st.secrets["gcp_service_account"]["project_id"], location="us-central1", credentials=creds)
             auth_ready = True
-            st.success("✅ AI System Online")
-        except:
-            st.error("Authentication Failed")
-    else:
-        st.warning("⚠️ No Secrets Found")
-
+            st.success("✅ Connected")
+        except: st.error("Auth Failed")
+    
     if auth_ready:
         st.divider()
-        st.subheader("🧠 Model Settings")
+        st.subheader("🧠 Model")
         selected_model = st.selectbox("Text Model", ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-1.5-flash-001"])
         temp = st.slider("Creativity", 0.0, 1.0, 0.2)
         
+        # --- RESTORED CHECKLIST ---
         st.divider()
         st.info("""
-        **GBP Post Quality Checklist:**
+        **Quality Checklist:**
         
-        1. **Tone Check:**
-           - No "Unleash", "Elevate", or "Unlock".
-           - Does it sound like a helpful human?
+        1. **Visuals:**
+           - *Service (Office):* Is the room empty/clean?
+           - *Service (Lifestyle):* Is it a nice headshot (no weird hands)?
+           - *Review/FAQ:* Use a **Template** from Drive.
            
-        2. **SEO Check:**
-           - Is the Target Keyword included naturally?
+        2. **Accuracy:**
+           - Did it make a Dental Chair for a Medical Doctor? (Bad!)
            
-        3. **Visual Check:**
-           - **Service:** AI Photo (Must be empty room/object).
-           - **Review:** Use the **5-Star Template** from Drive.
-           - **FAQ:** Use the **Q&A Template** from Drive.
+        3. **Tone:**
+           - Did it say "Unleash" or "Elevate"? (Re-run it).
+           
+        4. **SEO:**
+           - Is the Keyword included?
         """)
 
 # --- FUNCTIONS ---
-
 def get_website_text(url):
     try:
         headers = {'User-Agent': 'Mozilla/5.0'}
@@ -73,33 +71,50 @@ def get_website_text(url):
         return text[:5000].strip()
     except: return None
 
-def generate_copy(text, focus, keyword, model_name, temp, post_type, vibe):
+def generate_copy(text, focus, keyword, model_name, temp, post_type, vibe, visual_style):
     model = GenerativeModel(model_name)
     
-    tone = "Warm, friendly, helpful. Grade 8 English."
-    if vibe == "High-End / Luxury": tone = "Sophisticated, polished, professional."
-    elif vibe == "Urgent / Direct": tone = "Direct, concise, action-oriented."
+    tone = "Warm, friendly"
+    if vibe == "Luxury": tone = "Sophisticated, polished"
+    elif vibe == "Urgent": tone = "Direct, concise"
 
-    # Task Definition
-    task = f"Highlight service benefits found in text. Focus on: {focus}."
+    task = f"Highlight service benefits. Focus: {focus}."
     if post_type == "Review Spotlight":
-        task = "The Focus Input is a review. Write a short 'Thank You' caption. Summarize the sentiment."
-    elif post_type == "FAQ / Education":
-        task = f"Write a 'Did You Know?' or 'FAQ' post based on context. Answer a common question about: {focus}."
+        task = "Write a short 'Thank You' caption for a patient review."
+    elif post_type == "FAQ":
+        task = f"Answer a common patient question about: {focus}."
+
+    # VISUAL LOGIC
+    if visual_style == "Lifestyle / People":
+        visual_instruction = """
+        Describe a 'Lifestyle Portrait' of a happy, healthy adult (30s-40s). 
+        - HEADSHOT ONLY (Head and shoulders).
+        - Looking at camera, smiling confidently.
+        - Soft, blurred outdoor or neutral background (Bokeh).
+        - High-end commercial photography style.
+        - NO medical equipment. NO doctors. Just a happy person.
+        """
+    else:
+        visual_instruction = """
+        Describe a 'Modern Medical Interior'.
+        - If Plastic Surgery: "Luxury consultation desk, marble, orchids." (NO TOOLS).
+        - If OB/GYN: "Clean, comfortable medical room, soft lighting." (NO DENTAL CHAIRS).
+        - General: "Sunlit reception area with plants."
+        - NO PEOPLE.
+        """
 
     prompt = f"""
-    Role: SEO Copywriter for Local Business.
+    Role: SEO Copywriter.
     Context: {text} | Focus: {focus} | Keyword: {keyword}
     Task: {task}
     
     Guidelines: 
-    1. Start Immediately (No "Hello/We want to share").
-    2. Tone: {tone}. No fluff words ("Unleash", "Elevate").
-    3. Mandatory Keyword: {keyword if keyword else "N/A"}.
+    1. Start Immediately. Tone: {tone}. No fluff.
+    2. Mandatory Keyword: {keyword if keyword else "N/A"}.
     
-    Image Prompt Rule:
-    - If Service Highlight: Describe a specific room/object (NO PEOPLE).
-    - If Review or FAQ: Return "SKIP".
+    *** IMAGE RULE ({visual_style}) ***:
+    {visual_instruction}
+    - If Review/FAQ: Return "SKIP".
 
     Output Format:
     HEADLINE: [Header]
@@ -113,63 +128,56 @@ def generate_ai_image(prompt):
     if not prompt or "SKIP" in prompt or "Error" in prompt: return None
     try:
         model = ImageGenerationModel.from_pretrained("imagen-3.0-generate-001")
+        # Ensure we allow adults for lifestyle shots
         images = model.generate_images(prompt=prompt+", photorealistic, 4k, no text", number_of_images=1, aspect_ratio="4:3", person_generation="allow_adult")
         return images[0]
     except: return None
 
 # --- MAIN UI ---
-
 st.title("✍️ GBP Post Generator")
-st.markdown("Generate optimized captions. **Images generated only for Service Highlights.**")
-st.divider()
-
 col1, col2 = st.columns([1, 1], gap="large")
 
 with col1:
     st.subheader("1. Strategy")
     c1, c2 = st.columns(2)
-    with c1: post_type = st.selectbox("Post Type", ["Service Highlight", "Review Spotlight", "FAQ / Education"])
-    with c2: vibe = st.selectbox("Brand Vibe", ["Friendly / Warm", "High-End / Luxury", "Urgent / Direct"])
+    with c1: post_type = st.selectbox("Post Type", ["Service Highlight", "Review Spotlight", "FAQ"])
+    with c2: vibe = st.selectbox("Brand Vibe", ["Friendly", "Luxury", "Urgent"])
+    
+    # Visual Style Selector
+    visual_style = st.radio("Image Style", ["Office / Atmosphere (Safe)", "Lifestyle / People (Headshots)"], horizontal=True)
 
     st.subheader("2. Inputs")
-    url_input = st.text_input("Service Page URL", placeholder="https://client.com/service")
+    url_input = st.text_input("URL", placeholder="client.com/service")
+    keyword_input = st.text_input("Keyword", placeholder="Dentist 78704")
     
-    sub_col1, sub_col2 = st.columns(2)
-    with sub_col1: 
-        keyword_input = st.text_input("Target Keyword", placeholder="e.g. Dentist 78704")
-    with sub_col2: 
-        focus_label = "Focus / Offer"
-        if post_type == "Review Spotlight": focus_label = "Paste Review Text"
-        elif post_type == "FAQ / Education": focus_label = "Question to Answer"
-        focus_input = st.text_input(focus_label)
+    focus_label = "Focus / Offer"
+    if post_type == "Review Spotlight": focus_label = "Paste Review Text"
+    elif post_type == "FAQ": focus_label = "Question to Answer"
+    focus_input = st.text_input(focus_label)
     
     st.write("") 
     run_btn = st.button("✨ Generate Copy", type="primary")
 
-    if run_btn:
-        if not auth_ready: st.error("Check Sidebar Auth"); st.stop()
-        if not url_input: st.warning("Enter URL"); st.stop()
-
+    if run_btn and auth_ready and url_input:
         with st.status("Agent working...", expanded=True) as status:
             st.write("🕷️ Reading site...")
             site_text = get_website_text(url_input)
             
             st.write("🧠 Writing SEO Copy...")
             try:
-                raw = generate_copy(site_text, focus_input, keyword_input, selected_model, temp, post_type, vibe)
+                raw = generate_copy(site_text, focus_input, keyword_input, selected_model, temp, post_type, vibe, visual_style)
                 headline = raw.split("HEADLINE:")[1].split("BODY:")[0].strip()
                 body = raw.split("BODY:")[1].split("IMAGE_PROMPT:")[0].strip()
                 img_prompt = raw.split("IMAGE_PROMPT:")[1].strip()
-            except: 
-                headline="Error"; body="Error"; img_prompt="SKIP"
+            except: headline="Error"; body="Error"; img_prompt="SKIP"
 
-            # LOGIC: Only generate image for Service Highlights
             generated_image = None
+            # Only generate image for Service Highlights
             if post_type == "Service Highlight":
-                st.write("📸 Generating AI Room Photo...")
+                st.write("📸 Generating AI Photo...")
                 generated_image = generate_ai_image(img_prompt)
             else:
-                st.write("⏩ Skipping Image Gen (Template Required)")
+                st.write("⏩ Skipping Image Gen (Use Template)")
             
             status.update(label="Done!", state="complete", expanded=False)
 
@@ -177,18 +185,14 @@ with col1:
             with col2:
                 st.subheader("3. Copy & Assets")
                 
-                # VISUAL INSTRUCTIONS (The "Traffic Cop")
-                if post_type == "Review Spotlight":
-                    st.warning("🖼️ **ACTION REQUIRED:** Attach '5-Star Template' from Drive.")
-                elif post_type == "FAQ / Education":
-                    st.info("🖼️ **ACTION REQUIRED:** Attach 'Q&A Template' or Real Photo.")
+                if post_type != "Service Highlight":
+                    st.info("ℹ️ **Instruction:** Use a Template from Drive for this post type.")
                 elif generated_image:
                     generated_image.save("temp.jpg")
-                    st.image("temp.jpg", caption="AI Generated Room")
+                    st.image("temp.jpg", caption=f"AI Generated ({visual_style})")
                     with open("temp.jpg", "rb") as f:
                         st.download_button("⬇️ Download AI Photo", f, "ai_photo.jpg", "image/jpeg")
-                elif not generated_image and post_type == "Service Highlight":
-                    st.error("Image Generation Failed (Safety Filter). Use Real Photo.")
                 
                 st.text_input("Headline", headline)
-                st.text_area("Caption", body, height=250)
+                st.text_area("Caption", body, height=200)
+                st.caption(f"Prompt: {img_prompt}")
