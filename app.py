@@ -47,7 +47,7 @@ with st.sidebar:
         
         st.divider()
         st.info("""
-        **VA Quality Checklist:**
+        **GBP Post Quality Checklist:**
         
         1. **Tone Check:**
            - No "Unleash", "Elevate", or "Unlock".
@@ -119,7 +119,7 @@ def generate_ai_image(prompt):
 
 # --- MAIN UI ---
 
-st.title("✍️ Agency SEO Writer")
+st.title("✍️ GBP Post Generator")
 st.markdown("Generate optimized captions. **Images generated only for Service Highlights.**")
 st.divider()
 
