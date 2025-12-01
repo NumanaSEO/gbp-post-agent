@@ -3,4 +3,3 @@ google-cloud-aiplatform
 google-auth
 requests
 beautifulsoup4
-Pillow
