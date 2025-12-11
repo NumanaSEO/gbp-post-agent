@@ -6,6 +6,7 @@ from google.oauth2 import service_account
 import requests
 from bs4 import BeautifulSoup
 import io
+import re
 
 # --- PAGE CONFIGURATION ---
 st.set_page_config(page_title="Agency SEO Writer", page_icon="🏥", layout="wide")
@@ -179,12 +180,30 @@ with col1:
             site_text = get_website_text(url_input)
             
             st.write("🧠 Writing SEO Copy...")
+            
+            # --- ROBUST ERROR HANDLING & DEBUGGING ---
             try:
                 raw = generate_copy(site_text, focus_input, keyword_input, selected_model, temp, post_type, vibe, visual_style)
-                headline = raw.split("HEADLINE:")[1].split("BODY:")[0].strip()
-                body = raw.split("BODY:")[1].split("IMAGE_PROMPT:")[0].strip()
-                img_prompt = raw.split("IMAGE_PROMPT:")[1].strip()
-            except: headline="Error"; body="Error"; img_prompt="SKIP"
+                
+                # 1. Parsing Headline
+                # Looks for "HEADLINE:" with optional asterisks (**) and case insensitivity
+                headline_match = re.search(r'\*?HEADLINE:\*?\s*(.*)', raw, re.IGNORECASE)
+                headline = headline_match.group(1).strip() if headline_match else "Header Not Found"
+
+                # 2. Parsing Body
+                # Captures everything between BODY: and IMAGE_PROMPT:
+                body_match = re.search(r'\*?BODY:\*?\s*(.*?)\s*\*?IMAGE_PROMPT:', raw, re.DOTALL | re.IGNORECASE)
+                body = body_match.group(1).strip() if body_match else "Body Not Found"
+
+                # 3. Parsing Image Prompt
+                # Captures everything after IMAGE_PROMPT:
+                img_prompt_match = re.search(r'\*?IMAGE_PROMPT:\*?\s*(.*)', raw, re.IGNORECASE)
+                img_prompt = img_prompt_match.group(1).strip() if img_prompt_match else "SKIP"
+
+            except Exception as e:
+                headline = "Error Parsing Output"
+                body = f"The AI generated the text, but the code couldn't read it.\n\nRaw Error: {str(e)}\n\nAI Output:\n{raw}"
+                img_prompt = "SKIP"
 
             generated_image = None
             if post_type == "Service Highlight" and img_prompt != "SKIP":
