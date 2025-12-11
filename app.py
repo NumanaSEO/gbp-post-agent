@@ -79,7 +79,7 @@ def generate_copy(text, focus, keyword, model_name, temp, post_type, vibe, visua
     elif post_type == "FAQ":
         task = f"Answer a common patient question about: {focus}."
 
-    # --- STRICT VISUAL LOGIC ---
+  # --- STRICT VISUAL LOGIC ---
 if visual_style == "Lifestyle / People (Headshots)":
     visual_instruction = """
     Describe a 'High-End Commercial Beauty Portrait' of the person.
@@ -94,6 +94,7 @@ if visual_style == "Lifestyle / People (Headshots)":
         - **DO NOT** show any expression of pain or discomfort.
     - **NEGATIVE CONSTRAINT:** NO THUMBS UP.
     - **STYLE:** Magazine photography, soft and flattering lighting, 85mm lens.
+    """
     """
     else:
         visual_instruction = """
