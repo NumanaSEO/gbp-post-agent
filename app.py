@@ -89,6 +89,7 @@ def generate_copy(text, focus, keyword, model_name, temp, post_type, vibe, visua
         - **SAFETY OVERRIDE:** The person must look 100% HEALED and HEALTHY. 
           - DO NOT show bandages, doctors, hospitals, or medical tools.
           - DO NOT try to show 'Before/After' features. Just show a beautiful person.
+          - **NEGATIVE CONSTRAINT:** NO THUMBS UP.
         - STYLE: Magazine photography, soft lighting, 85mm lens.
         """
     else:
