@@ -79,22 +79,28 @@ def generate_copy(text, focus, keyword, model_name, temp, post_type, vibe, visua
     elif post_type == "FAQ":
         task = f"Answer a common patient question about: {focus}."
 
-  # --- STRICT VISUAL LOGIC ---
-if visual_style == "Lifestyle / People (Headshots)":
-    visual_instruction = """
-    Describe a 'High-End Commercial Beauty Portrait' of the person.
-    - **SUBJECT:** A confident, attractive adult (30s-50s). If an input image is provided, use the person's likeness **ONLY**, not their pose or emotional state.
-    - **EXPRESSION:** The person **MUST** be smiling warmly, looking relaxed, and radiating confidence. Their eyes should be bright and engaging. **ABSOLUTELY NO signs of distress, pain, headaches, or negative emotions.**
-    - **POSE:** A confident, open, and relaxed pose. **DO NOT** include poses where the person is holding their head, grimacing, or looking down.
-    - **BACKGROUND:** Neutral Studio Grey, Bright Living Room, or Soft Outdoor Blur. (Keep it simple and out of focus).
-    - **SAFETY OVERRIDE (STRENGTHENED):**
-        - The person **MUST** look 100% HEALED, HEALTHY, and HAPPY. This is a portrait of them at their best.
-        - **DO NOT** show bandages, doctors, hospitals, or medical tools.
-        - **DO NOT** try to show 'Before/After' features. Just show a beautiful, healthy person.
-        - **DO NOT** show any expression of pain or discomfort.
-    - **NEGATIVE CONSTRAINT:** NO THUMBS UP.
-    - **STYLE:** Magazine photography, soft and flattering lighting, 85mm lens.
-    """
+    # --- STRICT VISUAL LOGIC (UPDATED) ---
+    if visual_style == "Lifestyle / People (Headshots)":
+        visual_instruction = """
+        Describe a 'High-End Commercial Beauty/Lifestyle Portrait'.
+        - **CONCEPT:** The image must represent the *aspirational outcome* of successful treatment: vitality, confidence, and happiness. It must NOT represent the symptoms.
+        - **SUBJECT:** An attractive, vibrant adult (30s-50s) at their absolute best. They look energized and healthy.
+        - **EXPRESSION:** A genuine, warm, confident smile. Eyes are bright and engaged with the camera. They look deeply content and relaxed.
+        - **POSE:** Open, upright, and confident posture. Shoulders back, relaxed.
+        - **BACKGROUND:** Neutral Studio Grey, Bright Living Room, or Soft Outdoor Blur. (Keep it simple, high-end).
+        - **STYLE:** Magazine photography, soft flattering lighting, 85mm lens, shallow depth of field.
+
+        - **CRITICAL NEGATIVE POSE CONSTRAINTS (DO NOT DO THIS):**
+          - **ABSOLUTELY NO** hands touching the head, face, temples, or neck in a manner that suggests pain, stress, worry, or contemplation.
+          - **NO** slouching, hunched shoulders, or downward gazes.
+          - **NO** furled brows, grimaces, or expressions of discomfort.
+          - The subject must **NOT** look tired, stressed, or in pain.
+
+        - **SAFETY OVERRIDE:**
+          - The person must look 100% VIBRANT and HEALTHY.
+          - DO NOT show bandages, doctors, hospitals, pill bottles, or medical tools.
+          - **NEGATIVE CONSTRAINT:** NO THUMBS UP.
+        """
     else:
         visual_instruction = """
         Describe a 'Modern Medical Interior'.
