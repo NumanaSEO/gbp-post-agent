@@ -8,7 +8,7 @@ from bs4 import BeautifulSoup
 import io
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(page_title="Agency Post Factory", page_icon="🏥", layout="wide")
+st.set_page_config(page_title="Agency SEO Writer", page_icon="🏥", layout="wide")
 
 # --- CSS ---
 st.markdown("""
@@ -38,7 +38,7 @@ with st.sidebar:
     if auth_ready:
         st.divider()
         st.subheader("🧠 Model")
-        selected_model = st.selectbox("Text Model", ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-1.5-flash-001"])
+        selected_model = st.selectbox("Text Model", ["gemini-1.5-pro-001", "gemini-1.5-flash-001"])
         temp = st.slider("Creativity", 0.0, 1.0, 0.2)
         
         st.divider()
@@ -46,14 +46,11 @@ with st.sidebar:
         **✅ Quality Checklist:**
         
         1. **Visuals:**
-           - *Lifestyle:* Is the person fully healed & happy? (No bandages).
-           - *Office:* Is it clean/empty?
+           - *Lifestyle:* High-end, happy, healed.
+           - *UGC:* Authentic, selfie-style, imperfect.
            
-        2. **Accuracy:**
-           - Did it create a Dental Chair for a Medical Doctor? (Bad).
-           
-        3. **Tone:**
-           - Did it say "Unleash"? (Re-run it).
+        2. **Logic (New):**
+           - Detects "Care" contexts (e.g., Plan of Care = People, not Paperwork).
         """)
 
 # --- FUNCTIONS ---
@@ -79,34 +76,39 @@ def generate_copy(text, focus, keyword, model_name, temp, post_type, vibe, visua
     elif post_type == "FAQ":
         task = f"Answer a common patient question about: {focus}."
 
-    # --- STRICT VISUAL LOGIC (UPDATED WITH POSITIVE CONSTRAINTS) ---
-    if visual_style == "Lifestyle / People (Headshots)":
-        visual_instruction = """
-        Describe a 'High-End Commercial Beauty/Lifestyle Portrait'.
-        - **CONCEPT:** The image must represent the *aspirational outcome* of successful treatment: vitality, confidence, and happiness.
-        - **SUBJECT:** An attractive, vibrant adult (30s-50s) at their absolute best. Look energized and healthy.
-        - **EXPRESSION:** A genuine, warm, confident smile. Eyes are bright and engaged with the camera.
-        
-        - **POSE (CRITICAL SAFETY):** - To prevent accidental 'headache' gestures, use specific positive pose instructions:
-          - **PRIMARY OPTION:** "Arms crossed confidently over the chest, shoulders back."
-          - **SECONDARY OPTION:** "Hands resting casually in pockets."
-          - **CONSTRAINT:** Hands must be clearly visible and kept AWAY from the face, neck, and head.
-        
-        - **BACKGROUND:** Neutral Studio Grey, Bright Living Room, or Soft Outdoor Blur. (Keep it simple, high-end).
-        - **STYLE:** Magazine photography, soft flattering lighting, 85mm lens, shallow depth of field.
+    # --- 1. INTELLIGENT CONTEXT DETECTION (The "Care" Logic) ---
+    # This runs regardless of style to prevent literalism (e.g., Plan of Care != Paperwork)
+    context_logic = """
+    **VISUAL CONTEXT RULES:**
+    1. **Analyze the Topic:** Does this involve caregiving, family, or sensitive health topics?
+    2. **Avoid Literalism:** If the topic is "Plan of Care" or "Consultation", DO NOT describe documents, pens, or empty chairs.
+    3. **Focus on People:** Always depict the *human outcome* or *connection*.
+       - If Senior Care: Show a warm interaction between a Senior and a Family Member.
+    """
 
-        - **SAFETY OVERRIDE:**
-          - The person must look 100% VIBRANT and HEALTHY.
-          - DO NOT show bandages, doctors, hospitals, pill bottles, or medical tools.
-          - **NEGATIVE CONSTRAINT:** NO THUMBS UP. NO hands touching face.
-        """
-    else:
+    # --- 2. STYLE SELECTION (Added UGC) ---
+    if visual_style == "UGC / Selfie Style":
         visual_instruction = """
-        Describe a 'Modern Medical Interior'.
-        - If Plastic Surgery: "A high-end, marble consultation desk with a modern computer and a white orchid. Soft depth of field."
-        - If OB/GYN: "Clean, comfortable medical room, soft lighting." (NO DENTAL CHAIRS).
-        - General: "Sunlit reception area with plants."
-        - **NEGATIVE CONSTRAINT:** NO PEOPLE.
+        Describe a **'UGC / Selfie-Style'** photo.
+        - **Vibe:** Authentic, candid, slightly imperfect (iPhone aesthetic).
+        - **Subject:** A real person (or family) looking happy and relieved. 
+        - **Pose:** Looking at the camera, genuine smile, perhaps an arm around a loved one.
+        - **Constraint:** NO professional studio lighting. Make it look like social media content.
+        """
+    elif visual_style == "Lifestyle / Commercial":
+        visual_instruction = """
+        Describe a **'High-End Commercial Portrait'**.
+        - **Vibe:** Magazine quality, aspirational, successful outcome.
+        - **Subject:** Attractive, vibrant adult (30s-50s) at their absolute best.
+        - **Technique:** 85mm lens, shallow depth of field (bokeh), soft lighting.
+        - **Constraint:** NO hands touching face in pain. NO slouching.
+        """
+    else: # Office / Atmosphere
+        visual_instruction = """
+        Describe a **'Modern Medical/Office Interior'**.
+        - **Vibe:** Clean, sunlit, welcoming, expensive.
+        - **Details:** Fresh flowers, modern furniture, soft focus background.
+        - **Constraint:** NO PEOPLE. NO Dental chairs unless specified.
         """
 
     prompt = f"""
@@ -118,7 +120,8 @@ def generate_copy(text, focus, keyword, model_name, temp, post_type, vibe, visua
     1. Start Immediately. Tone: {tone}. No fluff.
     2. Mandatory Keyword: {keyword if keyword else "N/A"}.
     
-    *** IMAGE RULE ({visual_style}) ***:
+    *** IMAGE PROMPT LOGIC ({visual_style}) ***:
+    {context_logic}
     {visual_instruction}
     - If Review/FAQ: Return "SKIP".
 
@@ -134,8 +137,14 @@ def generate_ai_image(prompt):
     if not prompt or "SKIP" in prompt or "Error" in prompt: return None
     try:
         model = ImageGenerationModel.from_pretrained("imagen-3.0-generate-001")
-        # Ensure we allow adults for lifestyle shots
-        images = model.generate_images(prompt=prompt+", photorealistic, 4k, no text", number_of_images=1, aspect_ratio="4:3", person_generation="allow_adult")
+        # Base modifiers to ensure quality across all styles
+        modifiers = "4k, high quality"
+        if "UGC" in prompt or "Selfie" in prompt:
+            modifiers += ", shot on iPhone, social media style, authentic"
+        else:
+            modifiers += ", photorealistic, professional photography"
+            
+        images = model.generate_images(prompt=prompt + ", " + modifiers, number_of_images=1, aspect_ratio="4:3", person_generation="allow_adult")
         return images[0]
     except: return None
 
@@ -149,7 +158,8 @@ with col1:
     with c1: post_type = st.selectbox("Post Type", ["Service Highlight", "Review Spotlight", "FAQ"])
     with c2: vibe = st.selectbox("Brand Vibe", ["Friendly", "Luxury", "Urgent"])
     
-    visual_style = st.radio("Image Style", ["Office / Atmosphere (Safe)", "Lifestyle / People (Headshots)"], horizontal=True)
+    # Updated Visual Styles to include UGC
+    visual_style = st.radio("Image Style", ["Lifestyle / Commercial", "UGC / Selfie Style", "Office / Atmosphere"], horizontal=True)
 
     st.subheader("2. Inputs")
     url_input = st.text_input("URL", placeholder="client.com/service")
@@ -177,7 +187,7 @@ with col1:
             except: headline="Error"; body="Error"; img_prompt="SKIP"
 
             generated_image = None
-            if post_type == "Service Highlight":
+            if post_type == "Service Highlight" and img_prompt != "SKIP":
                 st.write("📸 Generating AI Photo...")
                 generated_image = generate_ai_image(img_prompt)
             else:
@@ -189,9 +199,7 @@ with col1:
             with col2:
                 st.subheader("3. Copy & Assets")
                 
-                if post_type != "Service Highlight":
-                    st.info("ℹ️ **Instruction:** Use a Template from Drive for this post type.")
-                elif generated_image:
+                if generated_image:
                     generated_image.save("temp.jpg")
                     st.image("temp.jpg", caption=f"AI Generated ({visual_style})")
                     with open("temp.jpg", "rb") as f:
