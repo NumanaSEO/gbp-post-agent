@@ -79,27 +79,26 @@ def generate_copy(text, focus, keyword, model_name, temp, post_type, vibe, visua
     elif post_type == "FAQ":
         task = f"Answer a common patient question about: {focus}."
 
-    # --- STRICT VISUAL LOGIC (UPDATED) ---
+    # --- STRICT VISUAL LOGIC (UPDATED WITH POSITIVE CONSTRAINTS) ---
     if visual_style == "Lifestyle / People (Headshots)":
         visual_instruction = """
         Describe a 'High-End Commercial Beauty/Lifestyle Portrait'.
-        - **CONCEPT:** The image must represent the *aspirational outcome* of successful treatment: vitality, confidence, and happiness. It must NOT represent the symptoms.
-        - **SUBJECT:** An attractive, vibrant adult (30s-50s) at their absolute best. They look energized and healthy.
-        - **EXPRESSION:** A genuine, warm, confident smile. Eyes are bright and engaged with the camera. They look deeply content and relaxed.
-        - **POSE:** Open, upright, and confident posture. Shoulders back, relaxed.
+        - **CONCEPT:** The image must represent the *aspirational outcome* of successful treatment: vitality, confidence, and happiness.
+        - **SUBJECT:** An attractive, vibrant adult (30s-50s) at their absolute best. Look energized and healthy.
+        - **EXPRESSION:** A genuine, warm, confident smile. Eyes are bright and engaged with the camera.
+        
+        - **POSE (CRITICAL SAFETY):** - To prevent accidental 'headache' gestures, use specific positive pose instructions:
+          - **PRIMARY OPTION:** "Arms crossed confidently over the chest, shoulders back."
+          - **SECONDARY OPTION:** "Hands resting casually in pockets."
+          - **CONSTRAINT:** Hands must be clearly visible and kept AWAY from the face, neck, and head.
+        
         - **BACKGROUND:** Neutral Studio Grey, Bright Living Room, or Soft Outdoor Blur. (Keep it simple, high-end).
         - **STYLE:** Magazine photography, soft flattering lighting, 85mm lens, shallow depth of field.
-
-        - **CRITICAL NEGATIVE POSE CONSTRAINTS (DO NOT DO THIS):**
-          - **ABSOLUTELY NO** hands touching the head, face, temples, or neck in a manner that suggests pain, stress, worry, or contemplation.
-          - **NO** slouching, hunched shoulders, or downward gazes.
-          - **NO** furled brows, grimaces, or expressions of discomfort.
-          - The subject must **NOT** look tired, stressed, or in pain.
 
         - **SAFETY OVERRIDE:**
           - The person must look 100% VIBRANT and HEALTHY.
           - DO NOT show bandages, doctors, hospitals, pill bottles, or medical tools.
-          - **NEGATIVE CONSTRAINT:** NO THUMBS UP.
+          - **NEGATIVE CONSTRAINT:** NO THUMBS UP. NO hands touching face.
         """
     else:
         visual_instruction = """
