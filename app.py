@@ -80,18 +80,22 @@ def generate_copy(text, focus, keyword, model_name, temp, post_type, vibe, visua
         task = f"Answer a common patient question about: {focus}."
 
     # --- STRICT VISUAL LOGIC ---
-    if visual_style == "Lifestyle / People (Headshots)":
-        visual_instruction = """
-        Describe a 'High-End Commercial Beauty Portrait'.
-        - SUBJECT: A confident, attractive adult (30s-50s).
-        - EXPRESSION: Smiling, relaxed, looking confident.
-        - BACKGROUND: Neutral Studio Grey, Bright Living Room, or Soft Outdoor Blur. (Keep it simple).
-        - **SAFETY OVERRIDE:** The person must look 100% HEALED and HEALTHY. 
-          - DO NOT show bandages, doctors, hospitals, or medical tools.
-          - DO NOT try to show 'Before/After' features. Just show a beautiful person.
-          - **NEGATIVE CONSTRAINT:** NO THUMBS UP.
-        - STYLE: Magazine photography, soft lighting, 85mm lens.
-        """
+if visual_style == "Lifestyle / People (Headshots)":
+    visual_instruction = """
+    Describe a 'High-End Commercial Beauty Portrait' of the person.
+    - **SUBJECT:** A confident, attractive adult (30s-50s). If an input image is provided, use the person's likeness **ONLY**, not their pose or emotional state.
+    - **EXPRESSION:** The person **MUST** be smiling warmly, looking relaxed, and radiating confidence. Their eyes should be bright and engaging. **ABSOLUTELY NO signs of distress, pain, headaches, or negative emotions.**
+    - **POSE:** A confident, open, and relaxed pose. **DO NOT** include poses where the person is holding their head, grimacing, or looking down.
+    - **BACKGROUND:** Neutral Studio Grey, Bright Living Room, or Soft Outdoor Blur. (Keep it simple and out of focus).
+    - **SAFETY OVERRIDE (STRENGTHENED):**
+        - The person **MUST** look 100% HEALED, HEALTHY, and HAPPY. This is a portrait of them at their best.
+        - **DO NOT** show bandages, doctors, hospitals, or medical tools.
+        - **DO NOT** try to show 'Before/After' features. Just show a beautiful, healthy person.
+        - **DO NOT** show any expression of pain or discomfort.
+    - **NEGATIVE CONSTRAINT:** NO THUMBS UP.
+    - **STYLE:** Magazine photography, soft and flattering lighting, 85mm lens.
+    """
+    
     else:
         visual_instruction = """
         Describe a 'Modern Medical Interior'.
