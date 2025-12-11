@@ -95,7 +95,6 @@ if visual_style == "Lifestyle / People (Headshots)":
     - **NEGATIVE CONSTRAINT:** NO THUMBS UP.
     - **STYLE:** Magazine photography, soft and flattering lighting, 85mm lens.
     """
-    """
     else:
         visual_instruction = """
         Describe a 'Modern Medical Interior'.
