@@ -39,7 +39,7 @@ with st.sidebar:
     if auth_ready:
         st.divider()
         st.subheader("🧠 Model")
-        selected_model = st.selectbox("Text Model", ["gemini-2.5-pro", "gemini-2.5-flash"])
+        selected_model = st.selectbox("Text Model", ["gemini-1.5-pro-001", "gemini-1.5-flash-001"])
         temp = st.slider("Creativity", 0.0, 1.0, 0.2)
         
         st.divider()
@@ -78,7 +78,6 @@ def generate_copy(text, focus, keyword, model_name, temp, post_type, vibe, visua
         task = f"Answer a common patient question about: {focus}."
 
     # --- 1. INTELLIGENT CONTEXT DETECTION (The "Care" Logic) ---
-    # This runs regardless of style to prevent literalism (e.g., Plan of Care != Paperwork)
     context_logic = """
     **VISUAL CONTEXT RULES:**
     1. **Analyze the Topic:** Does this involve caregiving, family, or sensitive health topics?
@@ -87,13 +86,14 @@ def generate_copy(text, focus, keyword, model_name, temp, post_type, vibe, visua
        - If Senior Care: Show a warm interaction between a Senior and a Family Member.
     """
 
-    # --- 2. STYLE SELECTION (Added UGC) ---
+    # --- 2. STYLE SELECTION (Updated with Hand Safety) ---
     if visual_style == "UGC / Selfie Style":
         visual_instruction = """
         Describe a **'UGC / Selfie-Style'** photo.
         - **Vibe:** Authentic, candid, slightly imperfect (iPhone aesthetic).
         - **Subject:** A real person (or family) looking happy and relieved. 
-        - **Pose:** Looking at the camera, genuine smile, perhaps an arm around a loved one.
+        - **Pose:** Heads leaning together affectionately (cheek to cheek). 
+        - **CRITICAL SAFETY:** HANDS MUST BE HIDDEN or resting naturally on laps. NO disembodied hands on shoulders. NO complex hugging poses that risk extra limbs.
         - **Constraint:** NO professional studio lighting. Make it look like social media content.
         """
     elif visual_style == "Lifestyle / Commercial":
@@ -102,7 +102,7 @@ def generate_copy(text, focus, keyword, model_name, temp, post_type, vibe, visua
         - **Vibe:** Magazine quality, aspirational, successful outcome.
         - **Subject:** Attractive, vibrant adult (30s-50s) at their absolute best.
         - **Technique:** 85mm lens, shallow depth of field (bokeh), soft lighting.
-        - **Constraint:** NO hands touching face in pain. NO slouching.
+        - **Constraint:** NO hands touching face in pain. NO complex hand gestures near the face to avoid anatomy errors.
         """
     else: # Office / Atmosphere
         visual_instruction = """
@@ -139,7 +139,7 @@ def generate_ai_image(prompt):
     try:
         model = ImageGenerationModel.from_pretrained("imagen-3.0-generate-001")
         # Base modifiers to ensure quality across all styles
-        modifiers = "4k, high quality"
+        modifiers = "4k, high quality, anatomically correct hands"
         if "UGC" in prompt or "Selfie" in prompt:
             modifiers += ", shot on iPhone, social media style, authentic"
         else:
@@ -186,17 +186,14 @@ with col1:
                 raw = generate_copy(site_text, focus_input, keyword_input, selected_model, temp, post_type, vibe, visual_style)
                 
                 # 1. Parsing Headline
-                # Looks for "HEADLINE:" with optional asterisks (**) and case insensitivity
                 headline_match = re.search(r'\*?HEADLINE:\*?\s*(.*)', raw, re.IGNORECASE)
                 headline = headline_match.group(1).strip() if headline_match else "Header Not Found"
 
                 # 2. Parsing Body
-                # Captures everything between BODY: and IMAGE_PROMPT:
                 body_match = re.search(r'\*?BODY:\*?\s*(.*?)\s*\*?IMAGE_PROMPT:', raw, re.DOTALL | re.IGNORECASE)
                 body = body_match.group(1).strip() if body_match else "Body Not Found"
 
                 # 3. Parsing Image Prompt
-                # Captures everything after IMAGE_PROMPT:
                 img_prompt_match = re.search(r'\*?IMAGE_PROMPT:\*?\s*(.*)', raw, re.IGNORECASE)
                 img_prompt = img_prompt_match.group(1).strip() if img_prompt_match else "SKIP"
 
