@@ -9,7 +9,7 @@ import io
 import re
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(page_title="Agency SEO Writer", page_icon="🏥", layout="wide")
+st.set_page_config(page_title="Agency SEO Writer", page_icon="🧸", layout="wide")
 
 # --- CSS ---
 st.markdown("""
@@ -39,7 +39,7 @@ with st.sidebar:
     if auth_ready:
         st.divider()
         st.subheader("🧠 Model")
-        selected_model = st.selectbox("Text Model", ["gemini-2.5-pro", "gemini-2.5-flash"])
+        selected_model = st.selectbox("Text Model", ["gemini-1.5-pro-001", "gemini-1.5-flash-001"])
         temp = st.slider("Creativity", 0.0, 1.0, 0.2)
         
         st.divider()
@@ -48,10 +48,10 @@ with st.sidebar:
         
         1. **Visuals:**
            - *Lifestyle:* High-end, happy, healed.
-           - *UGC:* Authentic, selfie-style, imperfect.
+           - *ABA/Kids:* Uses "Implied Presence" (Toys, Room, Therapist POV) to avoid safety blocks.
            
-        2. **Logic (New):**
-           - Detects "Care" contexts (e.g., Plan of Care = People, not Paperwork).
+        2. **Logic:**
+           - Detects "Care" and "Child" contexts automatically.
         """)
 
 # --- FUNCTIONS ---
@@ -77,39 +77,47 @@ def generate_copy(text, focus, keyword, model_name, temp, post_type, vibe, visua
     elif post_type == "FAQ":
         task = f"Answer a common patient question about: {focus}."
 
-    # --- 1. INTELLIGENT CONTEXT DETECTION (The "Care" Logic) ---
+    # --- 1. INTELLIGENT CONTEXT DETECTION ---
+    # We define specific rules for "Kids/ABA" vs "Senior Care" vs "General"
+    
     context_logic = """
-    **VISUAL CONTEXT RULES:**
-    1. **Analyze the Topic:** Does this involve caregiving, family, or sensitive health topics?
-    2. **Avoid Literalism:** If the topic is "Plan of Care" or "Consultation", DO NOT describe documents, pens, or empty chairs.
-    3. **Focus on People:** Always depict the *human outcome* or *connection*.
-       - If Senior Care: Show a warm interaction between a Senior and a Family Member.
+    **VISUAL CONTEXT RULES (CRITICAL):**
+    
+    **CASE A: PEDIATRIC / ABA / CHILD THERAPY**
+    - **Trigger:** If topic involves "ABA", "Child", "Pediatric", "Autism", or "Kids".
+    - **Restriction:** DO NOT ask for an image of a child (it will trigger safety blocks).
+    - **Solution 1 (The Setup):** Describe a warm, colorful therapy room. Close up on sensory toys, blocks, or a puzzle on a soft rug. Low angle.
+    - **Solution 2 (The Therapist POV):** A friendly Therapist (Adult) sitting on the floor, smiling warmly AT the camera. Camera is at eye-level of a child. 
+    
+    **CASE B: SENIOR CARE / HOME HEALTH**
+    - **Trigger:** "Elderly", "Senior", "Home Care".
+    - **Solution:** Warm interaction between a Senior and a Caregiver. Heads close, leaning in, comfortable.
+    
+    **CASE C: GENERAL**
+    - **Constraint:** Avoid literal documents. Focus on the human outcome.
     """
 
-    # --- 2. STYLE SELECTION (Updated with Hand Safety) ---
+    # --- 2. STYLE SELECTION ---
     if visual_style == "UGC / Selfie Style":
         visual_instruction = """
         Describe a **'UGC / Selfie-Style'** photo.
         - **Vibe:** Authentic, candid, slightly imperfect (iPhone aesthetic).
-        - **Subject:** A real person (or family) looking happy and relieved. 
-        - **Pose:** Heads leaning together affectionately (cheek to cheek). 
-        - **CRITICAL SAFETY:** HANDS MUST BE HIDDEN or resting naturally on laps. NO disembodied hands on shoulders. NO complex hugging poses that risk extra limbs.
-        - **Constraint:** NO professional studio lighting. Make it look like social media content.
+        - **Subject:** A real person looking happy.
+        - **Pose:** Heads leaning together affectionately.
+        - **SAFETY:** NO disembodied hands. Hands resting on laps.
         """
     elif visual_style == "Lifestyle / Commercial":
         visual_instruction = """
         Describe a **'High-End Commercial Portrait'**.
-        - **Vibe:** Magazine quality, aspirational, successful outcome.
-        - **Subject:** Attractive, vibrant adult (30s-50s) at their absolute best.
-        - **Technique:** 85mm lens, shallow depth of field (bokeh), soft lighting.
-        - **Constraint:** NO hands touching face in pain. NO complex hand gestures near the face to avoid anatomy errors.
+        - **Vibe:** Magazine quality, aspirational.
+        - **Subject:** Attractive, vibrant adult (30s-50s).
+        - **Technique:** 85mm lens, shallow depth of field (bokeh).
         """
     else: # Office / Atmosphere
         visual_instruction = """
-        Describe a **'Modern Medical/Office Interior'**.
-        - **Vibe:** Clean, sunlit, welcoming, expensive.
-        - **Details:** Fresh flowers, modern furniture, soft focus background.
-        - **Constraint:** NO PEOPLE. NO Dental chairs unless specified.
+        Describe a **'Modern Interior'**.
+        - **Vibe:** Clean, sunlit, welcoming.
+        - **Details:** If ABA/Child: Colorful mats, bean bags, sensory toys.
         """
 
     prompt = f"""
@@ -138,13 +146,18 @@ def generate_ai_image(prompt):
     if not prompt or "SKIP" in prompt or "Error" in prompt: return None
     try:
         model = ImageGenerationModel.from_pretrained("imagen-3.0-generate-001")
-        # Base modifiers to ensure quality across all styles
-        modifiers = "4k, high quality, anatomically correct hands"
+        
+        # Base modifiers
+        modifiers = "4k, high quality"
+        
+        # Adjust modifiers based on prompt content
         if "UGC" in prompt or "Selfie" in prompt:
             modifiers += ", shot on iPhone, social media style, authentic"
         else:
             modifiers += ", photorealistic, professional photography"
             
+        # IMPORTANT: We keep 'allow_adult' to enable the therapist. 
+        # The text prompt itself (from generate_copy) will ensure no children are requested.
         images = model.generate_images(prompt=prompt + ", " + modifiers, number_of_images=1, aspect_ratio="4:3", person_generation="allow_adult")
         return images[0]
     except: return None
@@ -159,7 +172,6 @@ with col1:
     with c1: post_type = st.selectbox("Post Type", ["Service Highlight", "Review Spotlight", "FAQ"])
     with c2: vibe = st.selectbox("Brand Vibe", ["Friendly", "Luxury", "Urgent"])
     
-    # Updated Visual Styles to include UGC
     visual_style = st.radio("Image Style", ["Lifestyle / Commercial", "UGC / Selfie Style", "Office / Atmosphere"], horizontal=True)
 
     st.subheader("2. Inputs")
@@ -181,25 +193,22 @@ with col1:
             
             st.write("🧠 Writing SEO Copy...")
             
-            # --- ROBUST ERROR HANDLING & DEBUGGING ---
             try:
                 raw = generate_copy(site_text, focus_input, keyword_input, selected_model, temp, post_type, vibe, visual_style)
                 
-                # 1. Parsing Headline
+                # Robust Parsing (Regex)
                 headline_match = re.search(r'\*?HEADLINE:\*?\s*(.*)', raw, re.IGNORECASE)
                 headline = headline_match.group(1).strip() if headline_match else "Header Not Found"
 
-                # 2. Parsing Body
                 body_match = re.search(r'\*?BODY:\*?\s*(.*?)\s*\*?IMAGE_PROMPT:', raw, re.DOTALL | re.IGNORECASE)
                 body = body_match.group(1).strip() if body_match else "Body Not Found"
 
-                # 3. Parsing Image Prompt
                 img_prompt_match = re.search(r'\*?IMAGE_PROMPT:\*?\s*(.*)', raw, re.IGNORECASE)
                 img_prompt = img_prompt_match.group(1).strip() if img_prompt_match else "SKIP"
 
             except Exception as e:
                 headline = "Error Parsing Output"
-                body = f"The AI generated the text, but the code couldn't read it.\n\nRaw Error: {str(e)}\n\nAI Output:\n{raw}"
+                body = f"Raw Error: {str(e)}\n\nAI Output:\n{raw}"
                 img_prompt = "SKIP"
 
             generated_image = None
