@@ -39,7 +39,7 @@ with st.sidebar:
     if auth_ready:
         st.divider()
         st.subheader("🧠 Model")
-        selected_model = st.selectbox("Text Model", ["gemini-2.5-pro", "gemini-2.5"])
+        selected_model = st.selectbox("Text Model", ["gemini-2.5-pro", "gemini-3.0"])
         temp = st.slider("Creativity", 0.0, 1.0, 0.2)
         
         st.divider()
