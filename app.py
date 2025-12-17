@@ -31,27 +31,25 @@ with st.sidebar:
                 st.secrets["gcp_service_account"],
                 scopes=["https://www.googleapis.com/auth/cloud-platform"]
             )
+            # Using us-central1 as primary, ensure your project has quota there
             vertexai.init(project=st.secrets["gcp_service_account"]["project_id"], location="us-central1", credentials=creds)
             auth_ready = True
             st.success("✅ Connected")
-        except: st.error("Auth Failed")
+        except Exception as e: 
+            st.error(f"Auth Failed: {e}")
     
     if auth_ready:
         st.divider()
         st.subheader("🧠 Model")
-        selected_model = st.selectbox("Text Model", ["gemini-3-pro-preview", "gemini-2.5-pro"])
+        # Updated to the correct 2025 Model IDs
+        selected_model = st.selectbox("Text Model", ["gemini-3-pro-preview", "gemini-3-flash-preview", "gemini-2.5-pro"])
         temp = st.slider("Creativity", 0.0, 1.0, 0.2)
         
         st.divider()
         st.info("""
         **✅ Quality Checklist:**
-        
-        1. **Visuals:**
-           - *Lifestyle:* High-end, happy, healed.
-           - *ABA/Kids:* Uses "Implied Presence" (Toys, Room, Therapist POV) to avoid safety blocks.
-           
-        2. **Logic:**
-           - Detects "Care" and "Child" contexts automatically.
+        1. **Visuals:** Lifestyle (High-end), Office (Modern).
+        2. **Safety:** Automatically avoids child image generation to prevent safety blocks.
         """)
 
 # --- FUNCTIONS ---
@@ -77,48 +75,19 @@ def generate_copy(text, focus, keyword, model_name, temp, post_type, vibe, visua
     elif post_type == "FAQ":
         task = f"Answer a common patient question about: {focus}."
 
-    # --- 1. INTELLIGENT CONTEXT DETECTION ---
-    # We define specific rules for "Kids/ABA" vs "Senior Care" vs "General"
-    
     context_logic = """
     **VISUAL CONTEXT RULES (CRITICAL):**
-    
-    **CASE A: PEDIATRIC / ABA / CHILD THERAPY**
-    - **Trigger:** If topic involves "ABA", "Child", "Pediatric", "Autism", or "Kids".
-    - **Restriction:** DO NOT ask for an image of a child (it will trigger safety blocks).
-    - **Solution 1 (The Setup):** Describe a warm, colorful therapy room. Close up on sensory toys, blocks, or a puzzle on a soft rug. Low angle.
-    - **Solution 2 (The Therapist POV):** A friendly Therapist (Adult) sitting on the floor, smiling warmly AT the camera. Camera is at eye-level of a child. 
-    
-    **CASE B: SENIOR CARE / HOME HEALTH**
-    - **Trigger:** "Elderly", "Senior", "Home Care".
-    - **Solution:** Warm interaction between a Senior and a Caregiver. Heads close, leaning in, comfortable.
-    
-    **CASE C: GENERAL**
-    - **Constraint:** Avoid literal documents. Focus on the human outcome.
+    - Trigger: If topic involves "ABA", "Child", "Autism", or "Kids".
+    - Restriction: DO NOT ask for an image of a child.
+    - Solution: Describe a warm therapy room with sensory toys/blocks.
     """
 
-    # --- 2. STYLE SELECTION ---
     if visual_style == "UGC / Selfie Style":
-        visual_instruction = """
-        Describe a **'UGC / Selfie-Style'** photo.
-        - **Vibe:** Authentic, candid, slightly imperfect (iPhone aesthetic).
-        - **Subject:** A real person looking happy.
-        - **Pose:** Heads leaning together affectionately.
-        - **SAFETY:** NO disembodied hands. Hands resting on laps.
-        """
+        visual_instruction = "Describe a 'UGC / Selfie-Style' photo. Authentic, candid, iPhone aesthetic."
     elif visual_style == "Lifestyle / Commercial":
-        visual_instruction = """
-        Describe a **'High-End Commercial Portrait'**.
-        - **Vibe:** Magazine quality, aspirational.
-        - **Subject:** Attractive, vibrant adult (30s-50s).
-        - **Technique:** 85mm lens, shallow depth of field (bokeh).
-        """
-    else: # Office / Atmosphere
-        visual_instruction = """
-        Describe a **'Modern Interior'**.
-        - **Vibe:** Clean, sunlit, welcoming.
-        - **Details:** If ABA/Child: Colorful mats, bean bags, sensory toys.
-        """
+        visual_instruction = "Describe a 'High-End Commercial Portrait'. 85mm lens, shallow depth of field."
+    else:
+        visual_instruction = "Describe a 'Modern Office Interior'. Sunlit and welcoming."
 
     prompt = f"""
     Role: SEO Copywriter.
@@ -126,7 +95,7 @@ def generate_copy(text, focus, keyword, model_name, temp, post_type, vibe, visua
     Task: {task}
     
     Guidelines: 
-    1. Start Immediately. Tone: {tone}. No fluff.
+    1. Start Immediately. Tone: {tone}.
     2. Mandatory Keyword: {keyword if keyword else "N/A"}.
     
     *** IMAGE PROMPT LOGIC ({visual_style}) ***:
@@ -146,19 +115,16 @@ def generate_ai_image(prompt):
     if not prompt or "SKIP" in prompt or "Error" in prompt: return None
     try:
         model = ImageGenerationModel.from_pretrained("imagen-3.0-generate-001")
-        
-        # Base modifiers
-        modifiers = "4k, high quality"
-        
-        # Adjust modifiers based on prompt content
-        if "UGC" in prompt or "Selfie" in prompt:
-            modifiers += ", shot on iPhone, social media style, authentic"
-        else:
-            modifiers += ", photorealistic, professional photography"
+        modifiers = "4k, photorealistic, professional photography"
+        if "UGC" in prompt:
+            modifiers = "shot on iPhone, social media style, authentic"
             
-        # IMPORTANT: We keep 'allow_adult' to enable the therapist. 
-        # The text prompt itself (from generate_copy) will ensure no children are requested.
-        images = model.generate_images(prompt=prompt + ", " + modifiers, number_of_images=1, aspect_ratio="4:3", person_generation="allow_adult")
+        images = model.generate_images(
+            prompt=prompt + ", " + modifiers, 
+            number_of_images=1, 
+            aspect_ratio="4:3", 
+            person_generation="allow_adult"
+        )
         return images[0]
     except: return None
 
@@ -183,32 +149,31 @@ with col1:
     elif post_type == "FAQ": focus_label = "Question to Answer"
     focus_input = st.text_input(focus_label)
     
-    st.write("") 
     run_btn = st.button("✨ Generate Copy", type="primary")
 
     if run_btn and auth_ready and url_input:
         with st.status("Agent working...", expanded=True) as status:
             st.write("🕷️ Reading site...")
             site_text = get_website_text(url_input)
-            
             st.write("🧠 Writing SEO Copy...")
             
+            # --- FIX: Initialize 'raw' here to prevent NameError ---
+            raw = "" 
             try:
                 raw = generate_copy(site_text, focus_input, keyword_input, selected_model, temp, post_type, vibe, visual_style)
                 
-                # Robust Parsing (Regex)
-                headline_match = re.search(r'\*?HEADLINE:\*?\s*(.*)', raw, re.IGNORECASE)
+                headline_match = re.search(r'HEADLINE:\s*(.*)', raw, re.IGNORECASE)
                 headline = headline_match.group(1).strip() if headline_match else "Header Not Found"
 
-                body_match = re.search(r'\*?BODY:\*?\s*(.*?)\s*\*?IMAGE_PROMPT:', raw, re.DOTALL | re.IGNORECASE)
+                body_match = re.search(r'BODY:\s*(.*?)\s*IMAGE_PROMPT:', raw, re.DOTALL | re.IGNORECASE)
                 body = body_match.group(1).strip() if body_match else "Body Not Found"
 
-                img_prompt_match = re.search(r'\*?IMAGE_PROMPT:\*?\s*(.*)', raw, re.IGNORECASE)
+                img_prompt_match = re.search(r'IMAGE_PROMPT:\s*(.*)', raw, re.IGNORECASE)
                 img_prompt = img_prompt_match.group(1).strip() if img_prompt_match else "SKIP"
 
             except Exception as e:
-                headline = "Error Parsing Output"
-                body = f"Raw Error: {str(e)}\n\nAI Output:\n{raw}"
+                headline = "Error Calling AI"
+                body = f"Raw Error: {str(e)}\n\nAI Output attempted was: {raw}"
                 img_prompt = "SKIP"
 
             generated_image = None
@@ -216,20 +181,18 @@ with col1:
                 st.write("📸 Generating AI Photo...")
                 generated_image = generate_ai_image(img_prompt)
             else:
-                st.write("⏩ Skipping Image Gen (Use Template)")
+                st.write("⏩ Skipping Image Gen")
             
             status.update(label="Done!", state="complete", expanded=False)
 
-            # --- RESULT ---
             with col2:
                 st.subheader("3. Copy & Assets")
-                
                 if generated_image:
-                    generated_image.save("temp.jpg")
-                    st.image("temp.jpg", caption=f"AI Generated ({visual_style})")
-                    with open("temp.jpg", "rb") as f:
-                        st.download_button("⬇️ Download AI Photo", f, "ai_photo.jpg", "image/jpeg")
+                    buf = io.BytesIO()
+                    generated_image.save(buf, format="JPEG")
+                    st.image(buf, caption=f"AI Generated ({visual_style})")
+                    st.download_button("⬇️ Download Photo", buf.getvalue(), "photo.jpg", "image/jpeg")
                 
                 st.text_input("Headline", headline)
-                st.text_area("Caption", body, height=200)
-                st.caption(f"Prompt: {img_prompt}")
+                st.text_area("Caption", body, height=250)
+                st.caption(f"Image Prompt: {img_prompt}")
